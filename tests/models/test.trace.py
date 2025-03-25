@@ -96,7 +96,9 @@ tr.bind_dataset(ds, stats.ClassificationOutput).log()
 # tr.validate_accuracy(max_iter_num=20, **config)
 # sys.exit()
 
-dis_tr = tr.discrete(force=True)
+dis_tr = tr.discrete(
+        force=True
+        )
 sim_tr = dis_tr.export("sim").log()
 sim_clip_tr = dis_tr.export("sim-clip").log()
 sim_round_tr = dis_tr.export("sim-round").log()
@@ -126,7 +128,7 @@ tr.validate_accuracy(
         sim_clip_tr,
         sim_round_tr,
         sim_quant_tr,
-        max_iter_num=20,
+        max_iter_num=200,
         **config)
 sys.exit()
 

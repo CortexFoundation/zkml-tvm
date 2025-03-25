@@ -45,7 +45,7 @@ class Trace:
     _sym_params: typing.List[Symbol] = field(init=False)
     _executor: typing.Optional[graph.GraphModule] = None
 
-    BASE_DIR: typing.ClassVar[str] = "./data"
+    BASE_DIR: typing.ClassVar[str] = "./zkml_data"
 
     def __post_init__(self):
         """ Verify inputs and params. """
@@ -116,7 +116,9 @@ class Trace:
             log_str += t.name + ": {} | "
 
         for i in range(max_iter_num or 99999999999999):
-            dls = [t._dataset.next() for t in all_traces]
+            # all trace use same input data to compare accuracy.
+            data = t._dataset.next()
+            dls = [data for t in all_traces]
             if any([dl is None for dl in dls]):
                 break
             for t, (data, label), stat in zip(
@@ -255,7 +257,7 @@ class Trace:
 
     def log(self, **kwargs):
         fname = self._get_checkpoint_path(self.name) + ".log"
-        print("Log   Trace {:20} into {}".format(
+        print("Log   Trace: {:20} into {}".format(
             self.name, fname))
         with open(fname, "w") as f:
             with redirect_stdout(f):
@@ -275,7 +277,7 @@ class Trace:
 
     def dump(self, tr_path: str = None):
         tr_path = tr_path or self._get_checkpoint_path()
-        print("Dump  Trace {:20} into {}".format(self.name, tr_path))
+        print("Dump  Trace: {:20} into {}".format(self.name, tr_path))
         data = dump_json(self.symbol)
         data.update({
             "_model_name": self.model,
@@ -301,7 +303,7 @@ class Trace:
         params = {k: tvm.nd.array(v) \
                 for k, v in data["params"].items()}
         symbol = load_json(data, params=params)
-        print("Load Trace {:20} from {}".format(name, tr_path))
+        print("Load  Trace: {:20} from {}".format(name, tr_path))
         return Trace(model, name, symbol, params)
 
     @staticmethod
@@ -309,7 +311,7 @@ class Trace:
             expr: RelayExpr, params: ParametersT,
             tr_name = "from_expr",
             model_name="unknown-model") -> Trace:
-        print("Init  Trace {:20} from model {}'s expr".format(
+        print("Init  Trace: {:20} from model {}'s expr".format(
             tr_name, model_name))
         symbol, params = expr2symbol(expr, params)
         return Trace(model_name, tr_name, symbol, params)
