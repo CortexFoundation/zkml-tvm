@@ -48,7 +48,7 @@ def format_print(
         info["total_layers"] += 1
         info["op_names"].add(sym.op_name)
         if op.is_param(sym, params):
-            info["params"] += np.product(sym.shape or (0))
+            info["params"] += np.prod(sym.shape or (0))
         info["ops"] += op.is_operator(sym)
 
     with config.Pass():

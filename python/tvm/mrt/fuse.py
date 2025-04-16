@@ -160,7 +160,7 @@ class FuseAvgPool2D(Transformer):
 
         assert len(X.shape) == 4
         if all([s == 1 for s in parsed.output_size]):
-            scale = 1 / np.product(X.shape[-2:])
+            scale = 1 / np.prod(X.shape[-2:])
             out = op.sum(X, axis=list(range(4))[-2:],
                     keepdims=True, exclude=False)
             scale = self.from_np_data(scale.astype(X.dtype))

@@ -113,7 +113,7 @@ prec_rules(TUPLE)(_infer_max)
 @prec_rules(CONV2D, DENSE)
 def _infer_nn(s: WithPrecision):
     W = s.args[1]
-    add_count = np.product(W.shape[1:])
+    add_count = np.prod(W.shape[1:])
     add_bits = count_to_bits(add_count)
     return _infer_mul(s) + add_bits
 @prec_rules(ADD, SUB)
@@ -134,12 +134,13 @@ prec_rules(CONCAT)(_infer_max)
 @prec_rules(SPLIT, TUPLE_GET_ITEM)
 @prec_rules(SQUEEZE, RESHAPE)
 @prec_rules(RELU, MAX_POOL2D)
+@prec_rules(CAST)
 def _first_like(s: WithPrecision):
     return _infer_index(s, 0)
 @prec_rules(SUM)
 def _infer_sum(s: WithPrecision):
-    input_len = np.product(s.args[0].shape)
-    output_len = np.product(s.shape)
+    input_len = np.prod(s.args[0].shape)
+    output_len = np.prod(s.shape)
     assert input_len % output_len == 0
     count = int(input_len / output_len)
     sum_bit = count_to_bits(count)

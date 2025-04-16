@@ -235,6 +235,8 @@ def op_lut_rules(s: QuantInfo):
     X = s.args[0]
     offset = s.from_np_data(np.array(alpha, "int"))
     indices = op.add(X, offset).like(X)
+    indices = op.clip(indices, a_min=0,  a_max=2*alpha).like(X) #a_max=alpha+1)
+    indices = op.cast(indices, dtype="int32")
 
     # arg_min, arg_max = -s.data, s.data
     # if s.is_op(EXP):

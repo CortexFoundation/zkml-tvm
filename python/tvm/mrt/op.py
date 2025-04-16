@@ -72,6 +72,7 @@ right_shift = _register_op(RIGHT_SHIFT)
 cast = _register_op(CAST)
 #  flatten = _register_op(FLATTEN)
 adv_index = _register_op(ADV_INDEX)
+zeros_like = _register_op(ZEROS_LIKE)
 
 repeat = _register_op(REPEAT)
 reshape = _register_op(RESHAPE)
