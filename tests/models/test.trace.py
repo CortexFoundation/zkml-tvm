@@ -103,7 +103,7 @@ sim_tr = dis_tr.export("sim").log()
 sim_clip_tr = dis_tr.export("sim-clip").log()
 sim_round_tr = dis_tr.export("sim-round").log()
 sim_quant_tr = dis_tr.export("sim-clip-round").log()
-circom_tr = dis_tr.export("circom").log()
+fixpt_tr = dis_tr.export("fixpt").log()
 
 
 # fuse_tr = tr.fuse().log()
@@ -132,3 +132,8 @@ tr.validate_accuracy(
         **config)
 sys.exit()
 
+from tvm.mrt import trace_to_circom
+circomTfm : trace_to_circom.CircomTfm = trace_to_circom.CircomTfm(fixpt_tr)
+circomTfm.run(output_name=f"circom_{model_name}")
+print('CircomTfm Done.')
+sys.exit()

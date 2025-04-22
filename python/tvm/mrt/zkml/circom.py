@@ -269,12 +269,13 @@ def dir_parse(dir_path, skips=[]):
             if fpath.endswith(".circom"):
                 file_parse(fpath)
 
-def info():
+def info(output_circom_info=False):
     #  print("Circom Operators:", list(components.keys()))
     for comp in components.values():
         if comp.op_name in ["Input", "Output"]:
             continue
-        print(comp.to_string())
+        if output_circom_info:
+            print(comp.to_string())
 
 FILE_DIR = path.dirname(__file__)
 print(FILE_DIR)
