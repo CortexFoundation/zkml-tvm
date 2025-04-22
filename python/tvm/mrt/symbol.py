@@ -27,6 +27,52 @@ def _format_printer(data):
         return "{:.3f}".format(data)
     return str(data)[-20:]
 
+# Model Graph/Symbol 
+# Operators: Y = f(X): Conv/Dense/MatMul, ReLu/Softmax/Sigmoid
+# Model: Y = f1(f2(f3(X), W, B)), Node, Var(Input/Param)
+# for/if(cycle)
+# CNN/RNN 
+
+# Static Quantization / Dynamic
+# y = f(x, w) * S   => batchnorm (0~1) => (0~128/256)
+# precision
+# MAX_BIT(32/64), model accleration/model size, int8, cuda/cpu int8 mat mul acce. int4/2/1
+# X * W = up(log(n))
+# => Y(y * s3) = F(X(x * s1), W(w * s2)) (MatMul/Conv/Dense)
+# s3 = s1 * s2 / max(s1, s2) / s1 + s2
+#
+# requant op
+# X(int24, xs1) => (int8, xs2) (X / xs1 = x)
+# calibrate => X (-3 ~ -7) 7 -> 127 , xs2
+# X xs1 => max_value => prec
+# X1 = clip(clip(round(X), prec) * (xs2 / xs1), int8) => int8
+# int <=> float32 multiply
+#
+# X1 = clip(round(x * xs2), int8)
+# Y = F(X1, W(w * ws)) time/memory 5min/10G => 1min/1G
+#
+# requant? model quantization/acceleration
+# all operations quantization.
+# llama_qint4(MatMul)
+# 
+# calibrate method? SymmetricMinMaxSampling: out = max(abs(out))
+# sample? 1, 16, 160 16
+# outlier, 0, 1, 100
+# hemetric sampling(95, calibrate threshold): 1hour
+# finetune training 
+# 
+# (O, I, H, W) threshold => (O, I,) layerwise quantizaion
+# 
+# CNN (value) argmax(1000, index) / LLM/RNN
+#
+# float parallel calculate problem
+# 1 + 0.00000001 * 100000000 = 1 = 2
+# 
+# float format: exp bits, int bits
+# IEEE float scheme?
+# 
+# int8 sum/mul, avx256 instruct
+
 @dataclass(repr=False)
 class _BaseSymbol:
     """ Symbol should record neccessary infomation about

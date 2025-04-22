@@ -183,6 +183,7 @@ class PrecisionRevisor(WithPrecision, Transformer):
                     "'s precision."
                     ) % out.op_name
             oprec = _INFER_RULES[out.op_name](out)
+            # TODO: more precision decision?
             if out.precision_defined and oprec > out.precision:
                 out.precision, oprec = oprec, out.precision
                 out = op.pclip(out, precision=oprec).like(

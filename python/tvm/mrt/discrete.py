@@ -301,18 +301,22 @@ class Discretor(QuantInfo):
                 "op rewrite rules not support for op:{}"
                 ).format(self.op_name)
 
+        # requant input to specific precision
         arg_dts = _DISCRETE_REQUANT_RULES[self.op_name](self)
         for i, arg in enumerate(self.args):
             self.args[i] = arg.rescale(arg_dts[i])
 
+        # calculate the F function
         out = _DISCRETE_OP_RULES[self.op_name](self).like(
                 self, extra_attrs=self.extra_attrs)
 
+        # calculate the output data's scale
         out.scale = INFER_SCALE_RULES[self.op_name](out)
         new = op.subgraph(out, inames=[a.name for a in self.args])
         #  self.is_op(EXP) and raw_print(new)
         #  out.scale = infer_scale(new)
 
+        # tight output's precsion based on the threshold and scale
         # out.precision = infer_precision(new, self.params)
         # target_precision = self.scale_to_precision(out.scale)
         # if out.precision > target_precision:

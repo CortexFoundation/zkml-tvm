@@ -18,6 +18,7 @@ data_shape = (batch_size,) + image_shape
 # Example: use the torch vision imagenet dataset.
 import torch
 import torchvision as tv
+tv.models
 data_transform = tv.transforms.Compose([
     tv.transforms.Resize(256),
     tv.transforms.CenterCrop(image_shape[1]),
@@ -97,6 +98,7 @@ tr.bind_dataset(ds, stats.ClassificationOutput).log()
 # sys.exit()
 
 dis_tr = tr.discrete(
+        calibrate_repeats=16,
         force=True
         )
 sim_tr = dis_tr.export("sim").log()

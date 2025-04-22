@@ -177,7 +177,7 @@ class Trace:
 
     def discrete(
             self,
-            calibrate_repeats: int = 1,
+            calibrate_repeats: int = 16,
             calibrate_sampling: calib.SamplingFuncT = None,
             force: bool = False) -> Trace:
         fuse_tr = self.fuse(force=force)
