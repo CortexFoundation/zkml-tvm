@@ -27,8 +27,6 @@
 
 #include <tvm/arith/analyzer.h>
 #include <tvm/relax/op_attr_types.h>
-#include <tvm/relay/expr.h>
-#include <tvm/relay/op.h>
 #include <tvm/tir/data_layout.h>
 
 #include <optional>
@@ -201,7 +199,8 @@ template <bool require_float_dtype, typename FType>
 inline StructInfo InferStructInfoUnary(const Call& call, const BlockBuilder& ctx,
                                        FType f_compute_out_dtype) {
   TensorStructInfo input_sinfo = GetUnaryInputTensorStructInfo(call, ctx);
-  if (require_float_dtype && !input_sinfo->IsUnknownDtype() && !input_sinfo->dtype.is_float()) {
+  if (require_float_dtype && !input_sinfo->IsUnknownDtype() &&
+      (!input_sinfo->dtype.is_float() && !input_sinfo->dtype.is_bfloat())) {
     ctx->ReportFatal(
         Diagnostic::Error(call)
         << call->op
@@ -569,6 +568,16 @@ Expr MakeAllocTensor(Expr shape, DataTypeImm dtype, PrimValue runtime_device_ind
  * \return The arguments of the call
  */
 Array<Expr> GetCallArgs(const Call& call);
+
+/**
+ * \brief Checks the given shape can be proved from the source layout to dst layout
+ * \param input_layout is the layout of given shape
+ * \param desired_layout is the target layout the shape to be transformed
+ * \param shape array
+ * \return true or false depending on the compatibility
+ */
+bool CanProveLayoutTransform(const Layout& input_layout, const Layout& desired_layout,
+                             Array<PrimExpr> shape);
 
 }  // namespace relax
 }  // namespace tvm

@@ -511,7 +511,7 @@ TVM_DLL const Op& tvm_storage_sync();
  *  __shfl_down_sync and __activemask.
  *
  *  Parameter warp_size is the size of a warp, which helps a backend
- *  to determine wheter the width paramter is legal.
+ *  to determine whether the width parameter is legal.
  *
  */
 TVM_DLL const Op& tvm_warp_shuffle();
@@ -969,6 +969,9 @@ TVM_DLL const Op& vscale();
  * (https://llvm.org/docs/LangRef.html#llvm-get-active-lane-mask-intrinsics)
  */
 TVM_DLL const Op& get_active_lane_mask();
+
+/*! \brief Annotate a predicate not be considered as target condition of loop partition. */
+TVM_DLL const Op& ignore_loop_partition();
 
 /*! \brief The kind of structure field info used in intrinsic */
 enum TVMStructFieldKind : int {
