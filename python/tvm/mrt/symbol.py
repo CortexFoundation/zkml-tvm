@@ -164,7 +164,8 @@ class _BaseSymbol:
             arg_len = (arg_len-2*(len(self.args)-1)) // len(self.args)
             arg_len = max(arg_len, 7)
         args_info = "({})".format(", ".join(
-            [_uniform(i.name, arg_len) for i in self.args]))
+            [_uniform(i.name if isinstance(i, Symbol) else str(i),
+                      arg_len) for i in self.args]))
         oattrs = {k: v for k, v in self.extra_attrs.items()}
         oattrs.update(attrs)
         #  oattrs.update(self.extra_attrs)
@@ -258,7 +259,8 @@ class Symbol(_BaseSymbol):
 
 
 def _topo_sort(symbol: Symbol, sym_list: typing.List[Symbol]):
-    assert isinstance(symbol, Symbol), type(symbol)
+    assert isinstance(symbol, Symbol), \
+            f"({type(symbol).__name__}){str(symbol)}"
 
     if sym_list.count(symbol) > 0:
         return
@@ -341,14 +343,25 @@ def transform(symbol: Symbol, callback: _TransformerT) -> Symbol:
         C.log_after and print("[{} >>] {}".format(C.name, out))
     return sym_map[symbol.name]
 
+def raw_log(symbol: Symbol):
+    header = "{f} Raw Info {f}\n".format(f = "="*25)
+    msg = [ header, ]
+    def _log(sym: Symbol):
+        msg.append(str(sym))
+    visit(symbol, _log)
+    msg.append("=" * len(header))
+    return "\n".join(msg)
+
 def raw_print(symbol: Symbol):
-    msg = "{f} Raw Print {f}".format(f = "="*25)
-    print(msg)
-    def _print(sym: Symbol):
-        print(sym)
     with config.Pass():
-        visit(symbol, _print)
-    print("=" * len(msg))
+        print(raw_log(symbol))
+    # msg = "{f} Raw Print {f}".format(f = "="*25)
+    # print(msg)
+    # def _print(sym: Symbol):
+    #     print(sym)
+    # with config.Pass():
+    #     visit(symbol, _print)
+    # print("=" * len(msg))
 
 def filter_operators(*op_names: typing.List[str]):
     def _pass(f):

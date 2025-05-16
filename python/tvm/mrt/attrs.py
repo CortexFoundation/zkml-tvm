@@ -59,6 +59,11 @@ class PClipAttrs(_BaseAttrs):
     precision: int
 
 @dataclass
+@register_attrs(RESHAPE)
+class PClipAttrs(_BaseAttrs):
+    shape: list
+
+@dataclass
 @register_attrs(REQUANT)
 class RequantAttrs(PClipAttrs):
     rescale: float

@@ -36,6 +36,7 @@ RESHAPE = "reshape"
 CONCAT = "concatenate"
 SPLIT = "split"
 TRANSPOSE = "transpose"
+BROADCAST_TO = "broadcast_to"
 
 EXPAND_DIMS = "expand_dims"
 TILE = "tile"
@@ -54,6 +55,9 @@ RIGHT_SHIFT = "right_shift"
 CAST = "cast"
 
 ADV_INDEX = "adv_index"
+
+CALL_TIR = "call_tir"
+CALL_DPS_PACKED = "call_dps_packed"
 
 # ======= binary ops =============
 

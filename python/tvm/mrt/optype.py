@@ -3,7 +3,8 @@ import typing
 from .types import *
 
 from . import op, opns
-from .frontend.expr import symbol2expr, expr2symbol
+from .frontend.tvm import *
+# from .frontend.expr import symbol2expr, expr2symbol
 from . import config
 from .symbol import Symbol, transform
 
@@ -11,12 +12,15 @@ InferTypeT = typing.Callable[[Symbol], Symbol]
 _INFER_TYPE_REG: typing.Dict[str, InferTypeT] = {}
 
 def _tvm_type_infer(symbol: Symbol) -> Symbol:
-    from tvm import relay, ir
     expr = symbol2expr(symbol)
-    mod = relay.transform.InferType()(ir.IRModule.from_expr(expr))
-    expr = mod["main"].body
+    expr = tvm_type_infer(expr)
     out, _ = expr2symbol(expr)
     return out
+    #  from tvm import relay, ir
+    #  mod = relay.transform.InferType()(ir.IRModule.from_expr(expr))
+    #  expr = mod["main"].body
+    #  out, _ = expr2symbol(expr)
+    #  return out
 
 def register_type_infer(
         *op_names,

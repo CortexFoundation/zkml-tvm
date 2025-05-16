@@ -14,6 +14,8 @@ from .inference import np_executor, run
 # TODO: add op pass register map.
 
 class FuseDropout(Transformer):
+    #out = filter_operators(DROP_OUT)(__call__)
+    # def out():
     @filter_operators(DROP_OUT)
     def __call__(self, **kwargs):
         return self.args[0]
