@@ -137,7 +137,7 @@ class Trace:
                     symbol2expr(self.symbol, self.params),
                     self.params, **kwargs)
 
-        data = runtime.validate_runtime_inputs(self._sym_inputs, data)
+        # data = runtime.validate_runtime_inputs(self._sym_inputs, data)
         res = runtime.run_executor(self._executor, data)
         assert len(res) == 1
         return res[0]

@@ -55,6 +55,7 @@ class Calibrator(Transformer):
             out = inference.run(
                     self, [a.nd_data for a in self.args],
                     **kwargs)
+            out = to_ndarray(out)
 
         assert isinstance(out, (tvm.nd.NDArray, list)), type(out)
         if isinstance(out, tvm.nd.NDArray):

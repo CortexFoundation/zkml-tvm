@@ -6,6 +6,8 @@ from tvm import relax, ir, tir
 from tvm.relax.expr import *
 from tvm.runtime import _ffi_node_api
 
+import numpy as np
+
 from ..opns import *
 from ..symbol import *
 from ..types import *
@@ -15,38 +17,10 @@ __ALL__ = [ "expr2symbol", "symbol2expr", "tvm_type_infer" ]
 
 NamedParametersT = typing.Dict[str, R.Tensor]
 
-def _convert_to_py(value):
-    """ ShapeVar not operated yet. """
-    if isinstance(value, ShapeExpr):
-        return _convert_to_py(value.values)
-    elif isinstance(value, PrimValue):
-        return _convert_to_py(value.value)
-    elif isinstance(value, ir.container.Array):
-        return [ _convert_to_py(v) for v in value ]
-    elif isinstance(value, (
-        tir.expr.IntImm, tir.expr.FloatImm, tir.expr.StringImm)):
-        return value.value
-    elif isinstance(value, (str, int, float)):
-        return value
-    elif value is None:
-        return value
-    elif isinstance(value, tir.expr.Var):
-        return value.name
-    else:
-        print(">>> unknown type:", type(value), value)
-    return value
-
 def _list_node_attrs_names(obj):
     fnames = _ffi_node_api.NodeListAttrNames(obj)
     size = fnames(-1)
     return sorted([fnames(i) for i in range(size)])
-
-def _struct_info(info: relax.StructInfo, key):
-    if isinstance(info, relax.struct_info.TupleStructInfo):
-        return [_struct_info(f, key) for f in info.fields]
-    #  return getattr(info, key)
-    val = _convert_to_py(getattr(info, key))
-    return val
 
 def expr2symbol(
         expr: Expr,
@@ -67,33 +41,27 @@ def expr2symbol(
         tvm.relax.StructInfo
         tvm.relax.expr.ShapeExpr
         try:
-            dtype = _struct_info(node.struct_info, "dtype")
+            dtype = get_struct_info(node.struct_info, "dtype")
         except Exception as e:
             # print(type(node))
             dtype = None
 
         try:
-            shape = _struct_info(node.struct_info, "shape")
+            shape = get_struct_info(node.struct_info, "shape")
         except Exception as e:
             shape = None
 
         attrs = { "extra_attrs": { "shape": shape, "dtype": dtype }, }
-        tvm.relax.struct_info.TupleStructInfo
-        #  print(dtype, shape, type(node.struct_info.fields[0]))
-        #  try:
-        #      print(type(node), node.checked_type.script())
-        #  except:
-        #      pass
 
-        tvm.script.relax.Tensor
-        print(type(node), str(node).replace("\n", "")[:30] + "...")
-        if isinstance(node, ( PrimValue, )):
+        #  print(type(node), str(node).replace("\n", "")[:30] + "...")
+        if isinstance(node, ( PrimValue, Constant, )):
             name = N.n("const_")
-            params[name] = _convert_to_py(node)
-            out = op.variable(name, [], dtype)
+            params[name] = convert_to_py(node)
+            shape = shape or ()
+            out = op.variable(name, shape, dtype)
             #  print(node.struct_info, params[name], out)
             #  sys.exit()
-            #  out = _convert_to_py(node)
+            #  out = convert_to_py(node)
         elif isinstance(node, ir.op.Op):
             out = node.name
         elif isinstance(node, ir.expr.GlobalVar):
@@ -120,7 +88,7 @@ def expr2symbol(
         elif isinstance(node, Call):
             if node.attrs is not None:
                 attr_names = _list_node_attrs_names(node.attrs)
-                attrs.update({k: _convert_to_py(
+                attrs.update({k: convert_to_py(
                     getattr(node.attrs, k)) for k in attr_names})
 
             op_name = node.op.name
@@ -131,7 +99,7 @@ def expr2symbol(
                 args = [symbol_map[f] for f in node.args[0].fields]
             elif op_name in [RESHAPE]:
                 args = [ symbol_map[node.args[0]] ]
-                attrs['shape'] = _convert_to_py(node.args[1])
+                attrs['shape'] = convert_to_py(node.args[1])
             else:
                 args = [symbol_map[i] for i in node.args]
 
@@ -161,7 +129,7 @@ def expr2symbol(
             tvm.relax.expr.TupleGetItem
             sys.exit()
 
-        print("=>", out)
+        #  print("=>", out)
         assert out is not None
         symbol_map[node] = out
 
@@ -169,10 +137,10 @@ def expr2symbol(
         relax.analysis.post_order_visit(expr, _cast_relax)
 
 
-    print(type(expr))
+    #  print(type(expr))
     binding_map = {}
     for vb in binding_info:
-        print(vb.var.name_hint, vb.value)
+        #  print(vb.var.name_hint, vb.value)
         # change op output into binding var name
         symbol_map[vb.value].name = vb.var.name_hint
         binding_map[symbol_map[vb.var]] = symbol_map[vb.value]
@@ -190,8 +158,86 @@ def expr2symbol(
     with open("/tmp/relax_out.log", "w") as f:
         f.write(raw_log(symbol_map[expr]))
 
+    return symbol_map[expr], params
+
+from tvm.script import relax as R
+
 def symbol2expr(
         symbol: Symbol,
         params: ParametersT = {},
-        ):
-    pass
+        expr_map: dict = {},
+        ) -> tvm.ir.IRModule:
+    expr_map.clear()
+    def _make_expr(sym: Symbol, args, attrs) -> Expr:
+        try:
+            return eval("R." + sym.op_name)(
+                    *args, **attrs)
+        except Exception as e:
+            print(sym, [type(a) for a in args], attrs)
+            raise e
+
+    bb: relax.BlockBuilder = relax.BlockBuilder()
+
+    def _cast_symbol(sym: Symbol):
+        if sym.name in expr_map:
+            return
+
+        print("<=", sym)
+        args = [expr_map[i.name] for i in sym.args]
+        attrs = {k: v for k, v in sym.attrs.items()}
+
+        #  if op.is_variable(sym):
+            #  if isinstance(sym.dtype, (list, tuple)):
+            #      inputs = []
+            #      for i, (s, d) in enumerate(zip(sym.shape, sym.dtype)):
+            #          attrs.update({
+            #              "shape": s, "dtype": d,
+            #              "name_hint": "%s.%s" % (sym.name, i)})
+            #          info = Shadd
+            #          out = relax.Var(
+            #                  "%s.%s" % (sym.name, i),
+            #                  R.Tensor(s, d))
+            #          inputs.append(out)
+            #      out = relax.Tuple(inputs)
+            #  else:
+            #      out = relax.Var(sym.name, R.Tensor(sym.shape, sym.dtype))
+        if sym.is_op(TUPLE):
+            out = relax.Tuple(args)
+        #  elif sym.is_op(TUPLE_GET_ITEM):
+        #      out = relax.TupleGetItem(*args, **attrs)
+        elif sym.is_op(CONCAT):
+            out = relax.op.concat(args, **attrs)
+        #  elif sym.is_op(ADV_INDEX):
+        #      out = relay.adv_index(args)
+        elif op.is_param(sym, params) and len(sym.shape) == 0:
+            out = relax.Constant(params[sym.name])
+        else:
+            out = _make_expr(sym, args, attrs)
+
+        print(f"=> {sym.name} = {out}")
+        if sym.name == symbol.name:
+            out: Expr = bb.emit_output(out, name_hint=sym.name)
+        else:
+            out: Expr = bb.emit(out, name_hint=sym.name)
+        expr_map[sym.name] = out
+
+    inputs = []
+    attrs = { 'num_input': 0 }
+    def _input(sym: Symbol):
+        if op.is_variable(sym):
+            attrs["num_input"] += op.is_input(sym, params)
+            out = relax.Var(sym.name, R.Tensor(sym.shape, sym.dtype))
+            inputs.append(out)
+            expr_map[sym.name] = out
+    visit(symbol, _input)
+
+    with bb.function("main", inputs, attrs=attrs):
+        with bb.dataflow():
+            visit(symbol, _cast_symbol)
+        bb.emit_func_output(expr_map[symbol.name])
+
+    with open("/tmp/relax.log", "w") as f:
+        f.write(bb.get().script(show_meta=True))
+    return bb.get()
+
+    #  return expr_map[symbol.name]
