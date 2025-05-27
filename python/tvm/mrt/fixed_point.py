@@ -32,7 +32,7 @@ class Simulator(QuantInfo):
         if self.is_param() and with_round:
             out = self.round(out)
 
-        if self.is_op(PCLIP, REQUANT):
+        if self.is_op(PCLIP, RS_PCLIP, REQUANT):
             out: Simulator = self.args[0]
             if self.is_op(REQUANT):
                 rescale = self.parsed.rescale

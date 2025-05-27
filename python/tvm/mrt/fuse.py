@@ -191,6 +191,8 @@ class FuseAvgPool2D(Transformer):
 
 class FuseNaiveSoftmax(Transformer):
     def __call__(self, **kw):
+        return self # not fuse pass
+
         if self.is_op(SOFTMAX, LOG_SOFTMAX):
             return self.args[0]
         assert self.is_variable() or not self.args[0].is_op(SOFTMAX, LOG_SOFTMAX)

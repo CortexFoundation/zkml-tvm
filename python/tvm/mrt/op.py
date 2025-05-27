@@ -79,7 +79,9 @@ reshape = _register_op(RESHAPE)
 
 add = _register_op(ADD)
 sub = _register_op(SUB)
+max_axis = _register_op(MAX_AXIS)
 mul = _register_op(MUL)
+div = _register_op(DIV)
 exp = _register_op(EXP)
 negative = _register_op(NEGATIVE)
 

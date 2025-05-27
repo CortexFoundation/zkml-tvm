@@ -21,6 +21,7 @@ SIGMOID = "sigmoid"
 
 SUM = "sum"
 MEAN = "mean"
+MAX_AXIS = "max"
 MAXIMUM = "maximum"
 MINIMUM = "minimum"
 

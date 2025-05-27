@@ -57,6 +57,11 @@ class ClipAttrs(_BaseAttrs):
 @register_attrs(PCLIP)
 class PClipAttrs(_BaseAttrs):
     precision: int
+@dataclass
+@register_attrs(RS_PCLIP)
+class RequantAttrs(PClipAttrs):
+    # shiftbit: int
+    precision: int
 
 @dataclass
 @register_attrs(REQUANT)

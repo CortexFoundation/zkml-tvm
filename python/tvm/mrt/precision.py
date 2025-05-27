@@ -110,6 +110,8 @@ def _infer_index(s: WithPrecision, index: int):
     return s.args[index].precision
 
 prec_rules(TUPLE)(_infer_max)
+prec_rules(MAX_AXIS)(_infer_max)
+prec_rules(DIV)(_infer_max)
 @prec_rules(CONV2D, DENSE)
 def _infer_nn(s: WithPrecision):
     W = s.args[1]
@@ -126,6 +128,8 @@ def _infer_add(s: WithPrecision):
     return _infer_max(s) + 1
 prec_rules(CONCAT)(_infer_max)
 
+@prec_rules(SOFTMAX)
+@prec_rules(LOG_SOFTMAX)
 @prec_rules(NEGATIVE)
 @prec_rules(EXPAND_DIMS, TILE, REPEAT)
 @prec_rules(ADV_INDEX)
@@ -171,7 +175,9 @@ class PrecisionRevisor(WithPrecision, Transformer):
         if out.is_input():
             return
         elif out.is_op(REQUANT, PCLIP):
-            assert out.precision == out.parsed.precision
+            assert out.precision == out.parsed.precision, f"{out.name} out_prec:{out.precision}, out_parsed_prec:{out.parsed.precision}"
+        elif out.is_op(RS_PCLIP):
+            assert out.precision == out.parsed.precision, f"rs_pclip: {out.name} out_prec:{out.precision}, out_parsed_prec:{out.parsed.precision}"
         elif out.is_param():
             absmax = np.abs(self.numpy()).max()
             oprec = number_to_bits(absmax)
