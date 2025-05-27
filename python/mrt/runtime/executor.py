@@ -1,6 +1,7 @@
 import typing
 
 import numpy as np
+from collections import namedtuple
 
 import tvm
 # import logging
@@ -9,14 +10,17 @@ from tvm import relay, ir, runtime
 #  from tvm.contrib import graph_executor
 #  from tvm.ir import RelayExpr
 
-from .types import *
-from .symbol import Symbol
-from .dataset import Dataset
-from .stats import Statistics
+from mrt.frontend.tvm.types import *
 
-from collections import namedtuple
+from mrt.mir.symbol import Symbol
+from mrt.dataset.base import Dataset
 
-__all__ = ["infer"]
+# from .types import *
+#  from .symbol import Symbol
+#  from .dataset import Dataset
+from .analysis import Statistics
+
+__all__ = [ "create_executor", "run_executor", "infer"]
 
 #  logger = logging.getLogger("runtime")
 
@@ -96,7 +100,7 @@ def infer(mod: tvm.IRModule, params: ParametersT,
     executor = create_executor(mod, params, device=device, **kwargs)
     out = run_executor(executor, data, data_dict)
 
-    print("infer:", type(out))
+    #  print("infer:", type(out))
 
     if len(out) == 1:
         out = out[0]

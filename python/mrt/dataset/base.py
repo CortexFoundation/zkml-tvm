@@ -6,7 +6,7 @@ from os import path
 
 import tvm
 
-from .types import *
+from mrt.common.types import DataLabelT
 
 class Dataset:
     def next(self) -> typing.Optional[DataLabelT]:

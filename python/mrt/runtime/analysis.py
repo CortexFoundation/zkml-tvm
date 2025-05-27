@@ -4,8 +4,7 @@ import enum
 import tvm
 import numpy as np
 
-from .utils import PY_ROOT
-from .types import *
+from mrt.common.types import *
 
 class StatsConfig(enum.Enum):
     NONE    = enum.auto()

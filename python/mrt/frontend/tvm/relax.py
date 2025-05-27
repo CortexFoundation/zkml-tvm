@@ -2,20 +2,32 @@ import typing
 import json
 
 import tvm
-from tvm.script import relax as R
-from tvm import relax, ir, tir
 from tvm.relax.expr import *
+from tvm import relax, ir, tir
+from tvm.script import relax as R
 from tvm.runtime import _ffi_node_api
 
 import numpy as np
 
-from ..opns import *
-from ..symbol import *
-from ..types import *
-from .. import op
-from ..model import Graph
+from mrt.mir import op, model
+from mrt.mir.opns import *
+from mrt.mir.symbol import *
 
-__ALL__ = [ "expr2symbol", "symbol2expr", "tvm_type_infer" ]
+from .types import *
+
+# from ..opns import *
+# from ..symbol import *
+# from ..types import *
+# from .. import op
+# from ..model import Graph
+
+__ALL__ = [
+   "expr2symbol", "symbol2expr",
+   "mod2graph", "graph2mod",
+   "tvm_type_infer" ]
+
+def tvm_type_infer(expr: Expr):
+    return expr
 
 NamedParametersT = typing.Dict[str, R.Tensor]
 
@@ -24,11 +36,11 @@ def _list_node_attrs_names(obj):
     size = fnames(-1)
     return sorted([fnames(i) for i in range(size)])
 
-def mod2graph(mod: tvm.IRModule, bind_params: typing.Optional[list] = None) -> Graph:
+def mod2graph(mod: tvm.IRModule, bind_params: typing.Optional[list] = None) -> model.Graph:
     if bind_params is None:
         mod, bind_params = relax.frontend.detach_params(mod)
 
-    graph: Graph = Graph()
+    graph: model.Graph = model.Graph()
     for (name, func) in mod.functions_items():
         name = name.name_hint
         num_input = int(func.attrs.get("num_input", 1))
@@ -38,7 +50,7 @@ def mod2graph(mod: tvm.IRModule, bind_params: typing.Optional[list] = None) -> G
         graph.merge_mod_params(fparams)
     return graph
 
-def graph2mod(graph: Graph) -> (tvm.IRModule, ParametersT):
+def graph2mod(graph: model.Graph) -> (tvm.IRModule, ParametersT):
     expr_map = {}
 
     builder = relax.BlockBuilder()

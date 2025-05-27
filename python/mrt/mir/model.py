@@ -2,8 +2,9 @@ import typing
 
 import numpy as np
 
+from mrt.common.types import *
+
 from .symbol import *
-from .types import *
 
 class Graph:
     """ Same level as the relax IRModule.  """

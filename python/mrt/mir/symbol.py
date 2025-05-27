@@ -5,9 +5,13 @@ import json
 from functools import wraps
 from dataclasses import dataclass, fields, is_dataclass
 
-from . import config
-from .utils import *
-from .types import *
+from mrt.common import config
+from mrt.common.utils import *
+from mrt.common.types import *
+
+# from . import config
+# from .utils import *
+#  from .types import *
 
 __ALL__ = [
         "Symbol",

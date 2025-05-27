@@ -1,11 +1,17 @@
 import typing
 
-from .types import *
+from mrt.common.types import *
+from mrt.common import config
+#  from mrt.mir import op, opns
+#  from mrt.symbol import Symbol, transform
 
+from mrt.frontend.tvm.relax import *
+
+# from .types import *
+
+#  from .frontend.tvm import *
+#  from . import config
 from . import op, opns
-from .frontend.tvm import *
-# from .frontend.expr import symbol2expr, expr2symbol
-from . import config
 from .symbol import Symbol, transform
 
 InferTypeT = typing.Callable[[Symbol], Symbol]

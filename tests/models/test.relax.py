@@ -39,7 +39,7 @@ test_loader = torch.utils.data.DataLoader(
         )
 
 # use mrt wrapper to uniform api for dataset.
-from tvm.mrt.dataset_torch import TorchWrapperDataset
+from mrt.dataset.torch import TorchWrapperDataset
 ds = TorchWrapperDataset(test_loader)
 
 # model inference context, like cpu, gpu, etc.
@@ -87,8 +87,8 @@ compiler: tvm.transform.Pass = relax.get_pipeline(
 
 data, label = ds.next()
 
-from tvm.mrt.frontend.relax import expr2symbol, symbol2expr
-from tvm.mrt.frontend.relax import mod2graph, graph2mod
+from mrt.frontend.tvm.relax import expr2symbol, symbol2expr
+from mrt.frontend.tvm.relax import mod2graph, graph2mod
 
 graph = mod2graph(mod, params)
 
@@ -105,7 +105,7 @@ graph = mod2graph(mod, params)
 #      func, fparams = expr2symbol(func.body, func_params)
 
 import numpy as np
-from tvm.mrt import runtime
+from mrt.runtime import executor
 
 #  mod = symbol2expr(func, fparams)
 #  cmod = compiler(mod)
@@ -130,29 +130,24 @@ from tvm.mrt import runtime
 #          gpu_data, *test_executor.dev_params[1:])
 #  print(gpu_out)
 
-#  from tvm.mrt import types
+#  from mrt import types
 #  gpu_out = types.to_numpy(gpu_out)[0]
 #  print(gpu_out.shape, label, label.shape)
 #  print(np.argmax(gpu_out))
 #  sys.exit()
 
 mod, fparams = graph2mod(graph)
-#  mod = symbol2expr(func, fparams)
-out: np.ndarray = runtime.infer(
+out: np.ndarray = executor.infer(
         mod, fparams, data,
         opt_pass=compiler, **config)
 print(type(out))
 print(out.flatten()[:10])
 print(out.shape, label)
 print("agrmax of out:", np.argmax(out))
-#  out = runtime.create_executor(
-#          mod, fparams,
-#          opt_pass=compiler,
-#          **config)
 sys.exit()
 
-from tvm.mrt import stats
-from tvm.mrt.trace import Trace
+from mrt import stats
+from mrt.trace import Trace
 tr = Trace.from_expr(func, fparams, model_name=model_name)
 tr.bind_dataset(ds, stats.ClassificationOutput).log()
 
@@ -175,7 +170,7 @@ circom_tr = dis_tr.export("circom").log()
 #         # force=True,
 #         batch_size=16).log()
 
-# from tvm.mrt.config import Pass
+# from mrt.config import Pass
 # with Pass(log_before=True, log_after=True):
 #     dis_tr = calib_tr.quantize().log()
 

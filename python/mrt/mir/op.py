@@ -6,8 +6,9 @@ This module should not be imported with *, since this
 
 from dataclasses import dataclass
 
+from mrt.common.utils import N
+
 from .opns import *
-from .utils import *
 from .symbol import *
 
 def subgraph(symbol: Symbol, inames=[], onames=[]):

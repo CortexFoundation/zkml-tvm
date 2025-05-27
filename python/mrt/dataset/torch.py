@@ -8,10 +8,12 @@ import torch
 from torch.utils.data import DataLoader, Dataset
 import torchvision as tv
 
-from .types import DataLabelT
-from . import dataset, utils
+from mrt.common import utils
+from mrt.common.types import DataLabelT
 
-class TorchWrapperDataset(dataset.Dataset):
+from . import base
+
+class TorchWrapperDataset(base.Dataset):
     def __init__(self, data_loader: DataLoader):
         self._loader = data_loader
         self._iter = iter(self._loader)
@@ -20,7 +22,7 @@ class TorchWrapperDataset(dataset.Dataset):
     def reset(self):
         self._iter = iter(self._loader)
 
-    def resize(self, batch_size: int) -> dataset.Dataset:
+    def resize(self, batch_size: int) -> base.Dataset:
         return TorchWrapperDataset(DataLoader(
             self._loader.dataset,
             batch_size=batch_size))
@@ -37,7 +39,7 @@ class TorchWrapperDataset(dataset.Dataset):
             print("error:", e)
             return None, None
 
-class TorchImageNet(dataset.ImageNet):
+class TorchImageNet(base.ImageNet):
     def __init__(self, batch_size = 1, img_size=(28, 28)):
         self._img_size = img_size
         val_data = tv.datasets.ImageFolder(
@@ -71,7 +73,7 @@ class TorchImageNet(dataset.ImageNet):
             print("error:", e)
             return None, None
 
-class TorchCoco(dataset.Coco):
+class TorchCoco(base.Coco):
     def __init__(self, batch_size = 1, img_size=(640, 640)):
         self._img_size = img_size
         val_data = tv.datasets.CocoDetection(
@@ -98,7 +100,7 @@ class TorchCoco(dataset.Coco):
             print("error:", e)
             return None, None
 
-class TorchVoc(dataset.Voc):
+class TorchVoc(base.Voc):
     def __init__(self, batch_size = 1, img_size=(28, 28)):
         self.classes = ('aeroplane', 'bicycle', 'bird', 'boat',
             'bottle', 'bus', 'car', 'cat', 'chair',
@@ -134,7 +136,7 @@ class TorchVoc(dataset.Voc):
             print("error:", e)
             return None, None
 
-class TorchCifar10(dataset.Cifar10):
+class TorchCifar10(base.Cifar10):
     def __init__(self, batch_size = 1, img_size=(32, 32)):
         self._img_size = img_size
         val_data = tv.datasets.CIFAR10(
@@ -164,7 +166,7 @@ class TorchCifar10(dataset.Cifar10):
             print("error:", e)
             return None, None
 
-class TorchCifar100(dataset.Cifar100):
+class TorchCifar100(base.Cifar100):
     def __init__(self, batch_size = 1, img_size=(32, 32)):
         self._img_size = img_size
         val_data = tv.datasets.CIFAR100(
@@ -191,7 +193,7 @@ class TorchCifar100(dataset.Cifar100):
             print("error:", e)
             return None, None
 
-class TorchMnist(dataset.Mnist):
+class TorchMnist(base.Mnist):
     def __init__(self, batch_size = 1, img_size=(28, 28)):
         self._img_size = img_size
         val_data = tv.datasets.MNIST(
@@ -236,7 +238,7 @@ class QuickDrawDataset(Dataset):
     def __len__(self):
         return len(self.x_data)
 
-class TorchQuickDraw(dataset.QuickDraw):
+class TorchQuickDraw(base.QuickDraw):
     def __init__(self, batch_size = 1, img_size=(28, 28)):
         self._img_size = img_size
         val_data = QuickDrawDataset()
@@ -283,7 +285,7 @@ class TrecDataset(Dataset):
     def __len__(self):
         return len(self.data)
 
-class TorchTrec(dataset.Trec):
+class TorchTrec(base.Trec):
     def __init__(self, batch_size = 1, img_size=38):
         self._img_size = img_size
         val_data = TrecDataset()
@@ -307,7 +309,7 @@ class TorchTrec(dataset.Trec):
             print("error:", e)
             return None, None
 
-class TorchCountry211(dataset.Country211):
+class TorchCountry211(base.Country211):
     def __init__(self, batch_size = 1, img_size=(28, 28)):
         self._img_size = img_size
         val_data = tv.datasets.Country211(
@@ -334,7 +336,7 @@ class TorchCountry211(dataset.Country211):
             print("error:", e)
             return None, None
 
-class TorchDtd(dataset.Dtd):
+class TorchDtd(base.Dtd):
     def __init__(self, batch_size = 1, img_size=(28, 28)):
         self._img_size = img_size
         val_data = tv.datasets.DTD(
@@ -361,7 +363,7 @@ class TorchDtd(dataset.Dtd):
             print("error:", e)
             return None, None
 
-class TorchEmnist(dataset.Emnist):
+class TorchEmnist(base.Emnist):
     def __init__(self, batch_size = 1, img_size=(28, 28)):
         self._img_size = img_size
         val_data = tv.datasets.EMNIST(
@@ -389,7 +391,7 @@ class TorchEmnist(dataset.Emnist):
             print("error:", e)
             return None, None
 
-class TorchFashionMNIST(dataset.FashionMNIST):
+class TorchFashionMNIST(base.FashionMNIST):
     def __init__(self, batch_size = 1, img_size=(28, 28)):
         self._img_size = img_size
         val_data = tv.datasets.FashionMNIST(
@@ -416,7 +418,7 @@ class TorchFashionMNIST(dataset.FashionMNIST):
             print("error:", e)
             return None, None
 
-class TorchFgvcaircraft(dataset.Fgvcaircraft):
+class TorchFgvcaircraft(base.Fgvcaircraft):
     def __init__(self, batch_size = 1, img_size=(28, 28)):
         self._img_size = img_size
         val_data = tv.datasets.FGVCAircraft(
@@ -443,7 +445,7 @@ class TorchFgvcaircraft(dataset.Fgvcaircraft):
             print("error:", e)
             return None, None
 
-class TorchFlowers102(dataset.Flowers102):
+class TorchFlowers102(base.Flowers102):
     def __init__(self, batch_size = 1, img_size=(28, 28)):
         self._img_size = img_size
         val_data = tv.datasets.Flowers102(
@@ -470,7 +472,7 @@ class TorchFlowers102(dataset.Flowers102):
             print("error:", e)
             return None, None
 
-class TorchFood101(dataset.Food101):
+class TorchFood101(base.Food101):
     def __init__(self, batch_size = 1, img_size=(28, 28)):
         self._img_size = img_size
         val_data = tv.datasets.Food101(
@@ -497,7 +499,7 @@ class TorchFood101(dataset.Food101):
             print("error:", e)
             return None, None
 
-class TorchGtsrb(dataset.Gtsrb):
+class TorchGtsrb(base.Gtsrb):
     def __init__(self, batch_size = 1, img_size=(28, 28)):
         self._img_size = img_size
         val_data = tv.datasets.GTSRB(
@@ -524,7 +526,7 @@ class TorchGtsrb(dataset.Gtsrb):
             print("error:", e)
             return None, None
 
-class TorchKmnist(dataset.Kmnist):
+class TorchKmnist(base.Kmnist):
     def __init__(self, batch_size = 1, img_size=(28, 28)):
         self._img_size = img_size
         val_data = tv.datasets.KMNIST(
@@ -551,7 +553,7 @@ class TorchKmnist(dataset.Kmnist):
             print("error:", e)
             return None, None
 
-class TorchLfwpeople(dataset.Lfwpeople):
+class TorchLfwpeople(base.Lfwpeople):
     def __init__(self, batch_size = 1, img_size=(28, 28)):
         self._img_size = img_size
         val_data = tv.datasets.LFWPeople(
@@ -577,7 +579,7 @@ class TorchLfwpeople(dataset.Lfwpeople):
             print("error:", e)
             return None, None
 
-class TorchOmniglot(dataset.Omniglot):
+class TorchOmniglot(base.Omniglot):
     def __init__(self, batch_size = 1, img_size=(28, 28)):
         self._img_size = img_size
         val_data = tv.datasets.Omniglot(
@@ -603,7 +605,7 @@ class TorchOmniglot(dataset.Omniglot):
             print("error:", e)
             return None, None
 
-class TorchOxfordIIITPet(dataset.OxfordIIITPet):
+class TorchOxfordIIITPet(base.OxfordIIITPet):
     def __init__(self, batch_size = 1, img_size=(28, 28)):
         self._img_size = img_size
         val_data = tv.datasets.OxfordIIITPet(
@@ -629,7 +631,7 @@ class TorchOxfordIIITPet(dataset.OxfordIIITPet):
             print("error:", e)
             return None, None
 
-class TorchRendered(dataset.Rendered):
+class TorchRendered(base.Rendered):
     def __init__(self, batch_size = 1, img_size=(28, 28)):
         self._img_size = img_size
         val_data = tv.datasets.RenderedSST2(
@@ -655,7 +657,7 @@ class TorchRendered(dataset.Rendered):
             print("error:", e)
             return None, None
 
-class TorchStl10(dataset.Stl10):
+class TorchStl10(base.Stl10):
     def __init__(self, batch_size = 1, img_size=(28, 28)):
         self._img_size = img_size
         val_data = tv.datasets.STL10(
@@ -682,7 +684,7 @@ class TorchStl10(dataset.Stl10):
             print("error:", e)
             return None, None
 
-class TorchUsps(dataset.Usps):
+class TorchUsps(base.Usps):
     def __init__(self, batch_size = 1, img_size=(28, 28)):
         self._img_size = img_size
         val_data = tv.datasets.USPS(
