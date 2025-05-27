@@ -15,7 +15,11 @@ from ..symbol import *
 from ..types import *
 from .. import op
 
-__ALL__ = [ "expr2symbol", "symbol2expr", ]
+__ALL__ = [ "expr2symbol", "symbol2expr", "tvm_type_infer" ]
+
+def tvm_type_infer(expr: RelayExpr):
+    mod = relay.transform.InferType()(ir.IRModule.from_expr(expr))
+    return mod["main"].body
 
 def _expr_type(checked_type: ir.type.Type, key):
     if isinstance(checked_type, ir.type.TupleType):

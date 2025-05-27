@@ -455,6 +455,19 @@ struct LeakyReluAttrs : public tvm::AttrsNode<LeakyReluAttrs> {
   }
 };
 
+/*! \brief Attributes used in softplus operators */
+struct SoftplusAttrs : public tvm::AttrsNode<SoftplusAttrs> {
+  double beta;
+  double threshold;
+
+  TVM_DECLARE_ATTRS(SoftplusAttrs, "relax.attrs.SoftplusAttrs") {
+    TVM_ATTR_FIELD(beta).describe(
+        "Scaling factor controlling the sharpness of the Softplus transition.");
+    TVM_ATTR_FIELD(threshold).describe(
+        "Value determining when to use linear approximation for numerical stability.");
+  }
+};
+
 /*! \brief Attributes used in batch_norm operator */
 struct BatchNormAttrs : public tvm::AttrsNode<BatchNormAttrs> {
   int axis;
@@ -462,6 +475,7 @@ struct BatchNormAttrs : public tvm::AttrsNode<BatchNormAttrs> {
   bool center;
   bool scale;
   double momentum;
+  bool training;
 
   TVM_DECLARE_ATTRS(BatchNormAttrs, "relax.attrs.BatchNormAttrs") {
     TVM_ATTR_FIELD(axis).describe("The axis along which the normalization is applied.");
@@ -470,6 +484,7 @@ struct BatchNormAttrs : public tvm::AttrsNode<BatchNormAttrs> {
         "Indicating if the beta offset will be added to the normalized tensor.");
     TVM_ATTR_FIELD(scale).describe("Indicating if the gamma scale will be multiplied.");
     TVM_ATTR_FIELD(momentum).describe("The value used for the moving_mean and moving_var update.");
+    TVM_ATTR_FIELD(training).describe("Whether we are training (i.e., not in eval mode).");
   }
 };  // struct BatchNormAttrs
 
@@ -562,12 +577,14 @@ struct AttentionAttrs : public tvm::AttrsNode<AttentionAttrs> {
 /*! \brief Attributes used for the padding operator */
 struct PadAttrs : public tvm::AttrsNode<PadAttrs> {
   Array<Integer> pad_width;
+  runtime::Float pad_value = 0.0;
   tvm::String pad_mode;
 
-  TVM_DECLARE_ATTRS(PadAttrs, "relay.attrs.PadAttrs") {
+  TVM_DECLARE_ATTRS(PadAttrs, "relax.attrs.PadAttrs") {
     TVM_ATTR_FIELD(pad_width).describe(
         "Number of values padded to the edges of each axis, "
         "in the format of (before_1, after_1, ..., before_N, after_N)");
+    TVM_ATTR_FIELD(pad_value).set_default(0.0).describe("The value to fill in padded area with");
     TVM_ATTR_FIELD(pad_mode)
         .set_default("constant")
         .describe(

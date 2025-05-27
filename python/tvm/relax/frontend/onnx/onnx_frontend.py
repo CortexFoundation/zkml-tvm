@@ -1526,6 +1526,8 @@ class Neg(OnnxOpConverter):
         if isinstance(inputs[0], relax.Constant):
             data_np = inputs[0].data.numpy()
             return relax.const(_np.negative(data_np), inputs[0].struct_info.dtype)
+        if isinstance(inputs[0], relax.PrimValue):
+            return relax.PrimValue(-inputs[0].value)
         return relax.op.negative(inputs[0])
 
 
@@ -1715,7 +1717,7 @@ class Split(OnnxOpConverter):
         # When splits isnt specified divide evenly over axis.
         else:
             indices = attr["tvm_custom"]["num_outputs"]
-        return bb.emit_te(topi.split, inputs[0], indices, attr.get("axis", 0))
+        return relax.op.split(inputs[0], indices, attr.get("axis", 0))
 
     @classmethod
     def _impl_v13(cls, bb, inputs, attr, params):
@@ -1736,7 +1738,7 @@ class Split(OnnxOpConverter):
         # When splits isnt specified divide evenly over axis.
         else:
             indices = attr["tvm_custom"]["num_outputs"]
-        return bb.emit_te(topi.split, inputs[0], indices, axis=attr.get("axis", 0))
+        return relax.op.split(inputs[0], indices, attr.get("axis", 0))
 
 
 def get_prim_value_list(values):
@@ -2189,7 +2191,7 @@ class Range(OnnxOpConverter):
             return relax.const(out_range, out_dtype)
 
         # Otherwise compute in graph.
-        return bb.emit_te(topi.arange, start, limit, step, out_dtype)
+        return relax.op.arange(start, limit, step, out_dtype)
 
 
 class InstanceNormalization(OnnxOpConverter):
@@ -2424,7 +2426,7 @@ class MaxUnpool(OnnxOpConverter):
             total_output_shape = output_shape
 
         elif pads is not None:
-            # Get pads in the proper format for relay.
+            # Get pads in the proper format
             pads = _np.concatenate([[0, 0, 0, 0], list(pads)], axis=0)
             pads = _np.reshape(pads, [-1, 2])
             # Compute the total padding per axis.
