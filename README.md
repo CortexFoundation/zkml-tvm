@@ -51,3 +51,27 @@ We learned a lot from the following projects when building TVM.
   originates from Halide. We also learned and adapted some part of lowering pipeline from Halide.
 - [Loopy](https://github.com/inducer/loopy): use of integer set analysis and its loop transformation primitives.
 - [Theano](https://github.com/Theano/Theano): the design inspiration of symbolic scan operator for recurrence.
+
+# ZKML MRT Trace
+```bash
+git submodule update --init
+```
+## Modify the cmake/config.cmake, enable CUDA, LLVM, CUBLAS, for example:
+```
+set(USE_CUDA ON)
+set(USE_CUBLAS ON)
+set(USE_LLVM "/usr/lib/llvm-18/bin/llvm-config --ignore-libllvm --link-static")
+```
+## After modification then build as:
+```bash
+make -j20
+```
+## prepare python environment
+```bash
+python3 python/gen_requirements.py
+pip install -r python/requirements/core.txt
+pip install torch==2.5.0+cu124 torchvision==0.20.0+cu124 torchaudio==2.5.0+cu124 --extra-index-url https://download.pytorch.org/whl/cu124 # cp310,cuda124 adapt
+## run trace test
+```bash
+python3 tests/models/test.trace.py  # build finish, python env ready, execute test.
+```

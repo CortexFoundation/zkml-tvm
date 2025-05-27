@@ -1,128 +1,104 @@
 import os
+from os import path
 import sys
 
 ROOT = os.getcwd()
-sys.path.insert(0, os.path.join(ROOT, "python"))
+sys.path.insert(0, path.join(ROOT, "python"))
 
 import tvm
 from tvm import relay, ir
+
 import numpy as np
 
-batch_size = 16
+batch_size = 1
 image_shape = (1, 28, 28)
 data_shape = (batch_size,) + image_shape
 
 import torch
 import torchvision as tv
-data_transform = tv.transforms.Compose([
-    tv.transforms.ToTensor(),
-    tv.transforms.Normalize(
-        [0.5], [0.5])
-])
-# data_transform = tv.models.MobileNet_V2_Weights.IMAGENET1K_V1.transforms()
-dataset = tv.datasets.MNIST(
-        '~/.mxnet/datasets/mnist/',
-        download=True,
-        transform=data_transform)
-test_loader = torch.utils.data.DataLoader(
-        dataset,
-        batch_size=batch_size, # set dataset batch load
-        )
 
-class MnistNet(torch.nn.Module):
+transform_mnist = tv.transforms.Compose(
+    [tv.transforms.ToTensor(), tv.transforms.Normalize((0.1307,), (0.3081,))]
+)
+
+# Mnist Dataset
+dataset = tv.datasets.MNIST(
+    "~/.mxnet/datasets/mnist/", download=True, transform=transform_mnist
+)
+test_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size)
+# Iteration: 199 | from_expr: Top1/5: 93.00%,98.50% | sim: Top1/5: 93.00%,98.50% | sim-clip: Top1/5: 92.00%,98.50% | sim-round: Top1/5: 93.00%,98.50% | sim-clip-round: Top1/5: 92.50%,98.50% |
+
+# use mrt wrapper to uniform api for dataset.
+from tvm.mrt.dataset_torch import TorchWrapperDataset
+
+ds = TorchWrapperDataset(test_loader)
+
+import torch.nn as nn
+
+
+class MnistNet(nn.Module):
     def __init__(self):
-        super(Net, self).__init__()
-        self.conv1 = torch.nn.Conv2d(1, 1, 20, 1)
-        self.fc1 = torch.nn.Linear(81, 10)
+        super(MnistNet, self).__init__()
+        self.conv1 = nn.Conv2d(1, 1, 22, 1)
+        self.fc1 = nn.Linear(49, 10)
 
     def forward(self, x):
         x = self.conv1(x)
         x = torch.flatten(x, 1)
         x = self.fc1(x)
-        #output = x
-        output = torch.nn.functional.log_softmax(x, dim=1)
+        # output = x
+        output = nn.functional.log_softmax(x, dim=1)
+        # output = nn.functional.softmax(x, dim=1)
         return output
 
-# use mrt wrapper to uniform api for dataset.
-from tvm.mrt.dataset_torch import TorchWrapperDataset
-ds = TorchWrapperDataset(test_loader)
 
-# model inference context, like cpu, gpu, etc.
-config = {"device": tvm.runtime.cuda(1),
-        "target": tvm.target.Target("cuda -arch=sm_86") }
+def load_model_from_torch():  # -> (ir.IRModule, ParametersT):
+    model = torch.load(
+        "mnist_cnn.pt", map_location=torch.device("cpu")
+    )  # this model is trained locally
+    model = model.eval()
+    input_data = torch.randn(data_shape)
+    script_module = torch.jit.trace(model, [input_data]).eval()
+    return tvm.relay.frontend.from_pytorch(script_module, [("input", data_shape)])
+
 
 model_name = "mnist_cnn"
-model = torch.load("mnist_cnn.pt0", map_location=torch.device('cpu')) # this model is trained locally
-model = model.eval()
-input_data = torch.randn(data_shape)
-script_module = torch.jit.trace(model, [input_data]).eval()
-mod, params = relay.frontend.from_pytorch(
-        script_module, [ ("input", data_shape) ])
 
-# MRT Procedure
+mod, params = load_model_from_torch()
 mod: tvm.IRModule = mod
-func: relay.function.Function = mod["main"]
+func: tvm.relay.function.Function = mod["main"]
 expr: ir.RelayExpr = func.body
 
-from tvm.mrt import stats
 from tvm.mrt.trace import Trace
+from tvm.mrt.opns import *
+from tvm.mrt.symbol import *
+
 tr = Trace.from_expr(expr, params, model_name=model_name)
+from tvm.mrt import stats
+
 tr.bind_dataset(ds, stats.ClassificationOutput).log()
 
-# tr.validate_accuracy(max_iter_num=1, **config)
-
-fuse_tr = tr.fuse().log()
-calib_tr = fuse_tr.calibrate(
-        # force=True,
-        batch_size=16).log()
-
-from tvm.mrt.config import Pass
-with Pass(log_before=True, log_after=True):
-    dis_tr = calib_tr.quantize().log()
-
-sim_tr = dis_tr.export().log()
-sim_clip_tr = dis_tr.export(with_clip=True).log()
-sim_round_tr = dis_tr.export(with_round=True).log()
-sim_quant_tr = dis_tr.export(
-        with_clip=True, with_round=True).log()
-
-circom_tr = dis_tr.export(force=True, use_simulator=False).log()
+dis_tr = tr.discrete(force=True)
+sim_tr = dis_tr.export("sim").log()
+sim_clip_tr = dis_tr.export("sim-clip").log()
+sim_round_tr = dis_tr.export("sim-round").log()
+sim_quant_tr = dis_tr.export("sim-clip-round").log()
+fixpt_tr = dis_tr.export("fixpt").log()
 
 tr.validate_accuracy(
-        sim_tr,
-        sim_clip_tr,
-        sim_round_tr,
-        sim_quant_tr,
-        max_iter_num=1,
-        **config)
-print("ValidateAccuracy Done!!!")
-#sys.exit()
+    sim_tr,
+    sim_clip_tr,
+    sim_round_tr,
+    sim_quant_tr,
+    max_iter_num=200,
+    device=tvm.runtime.cuda(1),
+    target=tvm.target.cuda("3090"),
+)
+# sys.exit()
 
-circom_tr.print()
+from tvm.mrt import trace_to_circom
 
-from tvm.mrt.zkml import circom, transformer, model as ZkmlModel
-symbol, params = circom_tr.symbol, circom_tr.params
-print(">>> Start circom gen...")
-symbol, params = ZkmlModel.resize_batch(symbol, params)
-symbol, params = transformer.change_name(symbol, params)
-ZkmlModel.simple_raw_print(symbol, params)
-# set input as params
-symbol_first = ZkmlModel.visit_first(symbol)
-input_data = torch.randint(255, image_shape)
-params[symbol_first.name] = input_data
-circom_out, circom_gen_map = transformer.model2circom(symbol, params)
-print(">>> Generating circom code ...")
-circom_code = circom.generate(circom_out)
-print(">>> Generating circom input ...")
-input_json = circom.input_json(circom_gen_map, params)
-
-output_name = "circom_model_test"
-print(">>> Generated, dump to {} ...".format(output_name))
-with open(output_name + ".circom", "w") as f:
-    f.write(circom_code)
-with open(output_name + ".json", "w") as f:
-    import json
-    f.write(json.dumps(input_json, indent=2))
-
-print(">>> success exit sys +1 <<<")
-sys.exit(+1)
+circomTfm: trace_to_circom.CircomTfm = trace_to_circom.CircomTfm(fixpt_tr)
+circomTfm.run(output_name=f"circom_{model_name}")
+print("CircomTfm Done.")
+sys.exit()

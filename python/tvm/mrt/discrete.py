@@ -120,9 +120,15 @@ def args_max_prec(prec: int):
     return _rule
 
 register_rules_with_default(
-        CONV2D, DENSE, MUL,
+        CONV2D,
+        requant_rule=args_max_prec(9),
+        scale_rule=scale_nn)
+
+register_rules_with_default(
+        DENSE, MUL,
         requant_rule=args_max_prec(8),
         scale_rule=scale_nn)
+
 register_rules_with_default(SUM, requant_rule=args_max_prec(10))
 
 def uniform_args_scale(args: typing.List[QuantInfo],
@@ -217,7 +223,10 @@ def op_clip_rules(s: QuantInfo):
     s.set_extra_attrs(
             a_min=s.parsed.a_min * scale,
             a_max=s.parsed.a_max * scale)
-    return s.copy()
+    out = s.copy()
+    out.attrs["a_min"]=s.parsed.a_min * scale
+    out.attrs["a_max"]=s.parsed.a_max * scale
+    return out
 
 register_rules_with_default(CLIP, op_rule=op_clip_rules)
 

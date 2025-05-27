@@ -148,8 +148,8 @@ def _infer_sum(s: WithPrecision):
 prec_rules(MUL)(_infer_mul)
 @prec_rules(CLIP)
 def _infer_clip(s: WithPrecision):
-    a_min = s.attrs["a_min"]
-    a_max = s.attrs["a_max"]
+    a_min = s.extra_attrs["a_min"] if "a_min" in s.extra_attrs else s.attrs["a_min"]
+    a_max = s.extra_attrs["a_max"] if "a_max" in s.extra_attrs else s.attrs["a_max"]
     absmax = max(math.fabs(a_min), math.fabs(a_max))
     return number_to_bits(absmax)
 @prec_rules(RIGHT_SHIFT)
