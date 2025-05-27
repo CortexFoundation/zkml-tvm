@@ -1,3 +1,4 @@
+import typing
 import json
 
 import tvm
@@ -12,6 +13,7 @@ from ..opns import *
 from ..symbol import *
 from ..types import *
 from .. import op
+from ..model import Graph
 
 __ALL__ = [ "expr2symbol", "symbol2expr", "tvm_type_infer" ]
 
@@ -21,6 +23,33 @@ def _list_node_attrs_names(obj):
     fnames = _ffi_node_api.NodeListAttrNames(obj)
     size = fnames(-1)
     return sorted([fnames(i) for i in range(size)])
+
+def mod2graph(mod: tvm.IRModule, bind_params: typing.Optional[list] = None) -> Graph:
+    if bind_params is None:
+        mod, bind_params = relax.frontend.detach_params(mod)
+
+    graph: Graph = Graph()
+    for (name, func) in mod.functions_items():
+        name = name.name_hint
+        num_input = int(func.attrs.get("num_input", 1))
+        fparams = {k.name_hint: v.numpy() for (k, v) in zip(
+            func.params[num_input:], bind_params[name])}
+        graph[name], fparams  = expr2symbol(func.body, fparams)
+        graph.merge_mod_params(fparams)
+    return graph
+
+def graph2mod(graph: Graph) -> (tvm.IRModule, ParametersT):
+    expr_map = {}
+
+    builder = relax.BlockBuilder()
+    for name, sym in graph.mod.items():
+        symbol2expr(sym, graph.params,
+                    expr_map=expr_map, clear_map=False,
+                    func_name=name, builder=builder)
+    mod = builder.finalize()
+    assert relax.analysis.well_formed(mod)
+    return mod, graph.params
+
 
 def expr2symbol(
         expr: Expr,
@@ -37,9 +66,6 @@ def expr2symbol(
         if isinstance(node, ShapeExpr):
             return
 
-        tvm.ir.RelaxExpr
-        tvm.relax.StructInfo
-        tvm.relax.expr.ShapeExpr
         try:
             dtype = get_struct_info(node.struct_info, "dtype")
         except Exception as e:
@@ -59,9 +85,7 @@ def expr2symbol(
             params[name] = convert_to_py(node)
             shape = shape or ()
             out = op.variable(name, shape, dtype)
-            #  print(node.struct_info, params[name], out)
-            #  sys.exit()
-            #  out = convert_to_py(node)
+            out.set_extra_attrs(use_const=isinstance(node, Constant))
         elif isinstance(node, ir.op.Op):
             out = node.name
         elif isinstance(node, ir.expr.GlobalVar):
@@ -74,8 +98,7 @@ def expr2symbol(
                     binding_info.append(vb)
                     #  binding_map[symbol_map[vb.value]] = symbol_map[vb.var]
             out = symbol_map[node.body]
-        elif isinstance(node, Var):
-            # tvm.relax.expr.DataflowVar
+        elif isinstance(node, Var): # tvm.relax.expr.DataflowVar
             name = node.name_hint or N.n(prefix="input_")
             out = op.variable(name, shape, dtype)
         elif isinstance(node, TupleGetItem):
@@ -114,19 +137,10 @@ def expr2symbol(
             elif op_name in [ CALL_TIR, CALL_DPS_PACKED, ]:
                 attrs["func_name"] = args.pop(0)
             out = op._new_op(op_name, *args, **attrs)
-
-            #  if "call_dps_packed" in op_name:
-            #      print([str(a) for a in args])
-            #      print(node.attrs)
-            #      print(node.sinfo_args)
-            #      sys.exit()
         elif isinstance(node, ExternFunc):
             out = str(node.global_symbol)
         else:
             print("unsupported expr:", node)
-            tvm.ir.expr.GlobalVar
-            tvm.relax.expr.ExternFunc
-            tvm.relax.expr.TupleGetItem
             sys.exit()
 
         #  print("=>", out)
@@ -136,8 +150,7 @@ def expr2symbol(
     with N():
         relax.analysis.post_order_visit(expr, _cast_relax)
 
-
-    #  print(type(expr))
+    # collect bind params information
     binding_map = {}
     for vb in binding_info:
         #  print(vb.var.name_hint, vb.value)
@@ -154,9 +167,9 @@ def expr2symbol(
         v.args = [binding_map.get(a, a) for a in v.args]
         symbol_map[k] = v
 
-    print("out: ", expr.body, symbol_map[expr])
-    with open("/tmp/relax_out.log", "w") as f:
-        f.write(raw_log(symbol_map[expr]))
+    #  print("out: ", expr.body, symbol_map[expr])
+    #  with open("/tmp/relax_out.log", "w") as f:
+    #      f.write(raw_log(symbol_map[expr]))
 
     return symbol_map[expr], params
 
@@ -166,8 +179,12 @@ def symbol2expr(
         symbol: Symbol,
         params: ParametersT = {},
         expr_map: dict = {},
+        clear_map: bool = True,
+        func_name: str = "main",
+        builder: typing.Optional[relax.BlockBuilder] = None,
         ) -> tvm.ir.IRModule:
-    expr_map.clear()
+    clear_map and expr_map.clear()
+
     def _make_expr(sym: Symbol, args, attrs) -> Expr:
         try:
             return eval("R." + sym.op_name)(
@@ -176,7 +193,7 @@ def symbol2expr(
             print(sym, [type(a) for a in args], attrs)
             raise e
 
-    bb: relax.BlockBuilder = relax.BlockBuilder()
+    builder: relax.BlockBuilder = builder or relax.BlockBuilder()
 
     def _cast_symbol(sym: Symbol):
         if sym.name in expr_map:
@@ -186,21 +203,6 @@ def symbol2expr(
         args = [expr_map[i.name] for i in sym.args]
         attrs = {k: v for k, v in sym.attrs.items()}
 
-        #  if op.is_variable(sym):
-            #  if isinstance(sym.dtype, (list, tuple)):
-            #      inputs = []
-            #      for i, (s, d) in enumerate(zip(sym.shape, sym.dtype)):
-            #          attrs.update({
-            #              "shape": s, "dtype": d,
-            #              "name_hint": "%s.%s" % (sym.name, i)})
-            #          info = Shadd
-            #          out = relax.Var(
-            #                  "%s.%s" % (sym.name, i),
-            #                  R.Tensor(s, d))
-            #          inputs.append(out)
-            #      out = relax.Tuple(inputs)
-            #  else:
-            #      out = relax.Var(sym.name, R.Tensor(sym.shape, sym.dtype))
         if sym.is_op(TUPLE):
             out = relax.Tuple(args)
         #  elif sym.is_op(TUPLE_GET_ITEM):
@@ -209,16 +211,16 @@ def symbol2expr(
             out = relax.op.concat(args, **attrs)
         #  elif sym.is_op(ADV_INDEX):
         #      out = relay.adv_index(args)
-        elif op.is_param(sym, params) and len(sym.shape) == 0:
-            out = relax.Constant(params[sym.name])
+        #  elif op.is_param(sym, params) and len(sym.shape) == 0:
+        #      out = relax.Constant(params[sym.name])
         else:
             out = _make_expr(sym, args, attrs)
 
         print(f"=> {sym.name} = {out}")
         if sym.name == symbol.name:
-            out: Expr = bb.emit_output(out, name_hint=sym.name)
+            out: Expr = builder.emit_output(out, name_hint=sym.name)
         else:
-            out: Expr = bb.emit(out, name_hint=sym.name)
+            out: Expr = builder.emit(out, name_hint=sym.name)
         expr_map[sym.name] = out
 
     inputs = []
@@ -226,18 +228,25 @@ def symbol2expr(
     def _input(sym: Symbol):
         if op.is_variable(sym):
             attrs["num_input"] += op.is_input(sym, params)
-            out = relax.Var(sym.name, R.Tensor(sym.shape, sym.dtype))
-            inputs.append(out)
+            st_info = R.Tensor(sym.shape, sym.dtype)
+
+            # fix unverified memory error.
+            if sym.extra_attrs.get("use_const", False):
+                data = params[sym.name]
+                out = relax.Constant(to_ndarray(data), st_info)
+            else:
+                out = relax.Var(sym.name, st_info)
+                inputs.append(out)
             expr_map[sym.name] = out
     visit(symbol, _input)
 
-    with bb.function("main", inputs, attrs=attrs):
-        with bb.dataflow():
+    with builder.function(func_name, params=inputs, attrs=attrs):
+        with builder.dataflow():
             visit(symbol, _cast_symbol)
-        bb.emit_func_output(expr_map[symbol.name])
+        builder.emit_func_output(expr_map[symbol.name])
 
-    with open("/tmp/relax.log", "w") as f:
-        f.write(bb.get().script(show_meta=True))
-    return bb.get()
+    #  with open("/tmp/relax.log", "w") as f:
+    #      f.write(builder.get().script())
+    return builder.get()
 
     #  return expr_map[symbol.name]

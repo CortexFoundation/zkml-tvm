@@ -88,26 +88,32 @@ compiler: tvm.transform.Pass = relax.get_pipeline(
 data, label = ds.next()
 
 from tvm.mrt.frontend.relax import expr2symbol, symbol2expr
+from tvm.mrt.frontend.relax import mod2graph, graph2mod
 
-for (name, func) in mod.functions_items():
-    name: relax.expr.GlobalVar = name
-    func: relax.Function = func
-    #  print(type(func.params[0]), type(func.params[1]))
-    num_input = int(func.attrs.get("num_input", 1))
-    func_params = {k.name_hint: v.numpy() for (k, v) in zip(
-        func.params[num_input:], params[name.name_hint])}
-    #  print(name, type(func_params))
-    #  print({k: v.shape for k, v in func_params.items()})
+graph = mod2graph(mod, params)
 
-    func, fparams = expr2symbol(func.body, func_params)
+#  for (name, func) in mod.functions_items():
+#      name: relax.expr.GlobalVar = name
+#      func: relax.Function = func
+#      #  print(type(func.params[0]), type(func.params[1]))
+#      num_input = int(func.attrs.get("num_input", 1))
+#      func_params = {k.name_hint: v.numpy() for (k, v) in zip(
+#          func.params[num_input:], params[name.name_hint])}
+#      #  print(name, type(func_params))
+#      #  print({k: v.shape for k, v in func_params.items()})
+
+#      func, fparams = expr2symbol(func.body, func_params)
 
 import numpy as np
 from tvm.mrt import runtime
 
+#  mod = symbol2expr(func, fparams)
 #  cmod = compiler(mod)
 #  cmod["main"].show()
-#  ex = tvm.compile(cmod, target="cuda")
-#  dev = tvm.device("cuda", 0)
+#  #  ex = tvm.compile(cmod, target="cuda")
+#  #  dev = tvm.device("cuda", 0)
+#  ex = tvm.compile(cmod, target=config["target"])
+#  dev = config["device"]
 #  vm = relax.VirtualMachine(ex, dev)
 
 #  gpu_data = tvm.nd.array(data.astype("float32"), dev)
@@ -115,6 +121,7 @@ from tvm.mrt import runtime
 
 #  test_executor = runtime.create_executor(
 #          mod, fparams, **config, opt_pass=compiler)
+#  gpu_out = runtime.run_executor(test_executor, gpu_data)
 #  print(test_executor.input_info)
 #  for (mp, p) in zip(test_executor.dev_params[1:], gpu_params):
 #      assert mp.shape == p.shape, f"{mp.shape} vs. {p.shape}"
@@ -129,11 +136,13 @@ from tvm.mrt import runtime
 #  print(np.argmax(gpu_out))
 #  sys.exit()
 
-mod = symbol2expr(func, fparams)
+mod, fparams = graph2mod(graph)
+#  mod = symbol2expr(func, fparams)
 out: np.ndarray = runtime.infer(
         mod, fparams, data,
         opt_pass=compiler, **config)
-print(out)
+print(type(out))
+print(out.flatten()[:10])
 print(out.shape, label)
 print("agrmax of out:", np.argmax(out))
 #  out = runtime.create_executor(

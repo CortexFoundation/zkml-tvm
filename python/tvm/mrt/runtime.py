@@ -86,11 +86,9 @@ def run_executor(
 
     out = vm["main"](*dev_params)
     assert isinstance(out, (list, tvm.ir.container.Array)), type(out)
-    #  if not isinstance(out, (list, tvm.ir.container.Array)):
-    #      out = [ out, ]
     return to_numpy(out)
 
-def infer(mod, params,
+def infer(mod: tvm.IRModule, params: ParametersT,
           data: typing.Optional[np.ndarray] = None,
           data_dict: ParametersT = {},
           device: tvm.runtime.Device = tvm.runtime.cpu(),
@@ -98,10 +96,11 @@ def infer(mod, params,
     executor = create_executor(mod, params, device=device, **kwargs)
     out = run_executor(executor, data, data_dict)
 
+    print("infer:", type(out))
+
     if len(out) == 1:
         out = out[0]
     return out
-    #  return to_ndarray(out[0])
 
 
 # def create_executor(
