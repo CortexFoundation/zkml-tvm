@@ -61,3 +61,28 @@ The project's current design goal is to make the ML compiler accessible by enabl
 transformations to be customizable in Python and bringing a cross-level representation that can jointly
 optimize computational graphs, tensor programs, and libraries. The project is also a foundation
 infra for building Python-first vertical compilers for domains, such as LLMs.
+
+# ZKML MRT Trace
+```bash
+git submodule update --init
+```
+## Modify the cmake/config.cmake, enable CUDA, LLVM, CUBLAS, for example:
+```
+set(USE_CUDA ON)
+set(USE_CUBLAS ON)
+set(USE_LLVM "/usr/lib/llvm-18/bin/llvm-config --ignore-libllvm --link-static")
+```
+## After modification then build as:
+```bash
+make -j20
+```
+## prepare python environment
+```bash
+python3 python/gen_requirements.py
+pip install -r python/requirements/core.txt
+pip install torch==2.5.0+cu124 torchvision==0.20.0+cu124 torchaudio==2.5.0+cu124 --extra-index-url https://download.pytorch.org/whl/cu124 # cp310,cuda124 adapt
+## run trace test
+```bash
+python3 tests/models/test.trace.py  # build finish, python env ready, execute test.
+```
+

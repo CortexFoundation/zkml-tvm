@@ -340,7 +340,7 @@ def model2circom(symbol, params) -> (CircomGenerator, typing.Dict[str, CircomGen
                 sym_fl = sym.copy(args=sym.args)
                 sym_fl.name = name+"_flatten"
                 sym_fl.op_name = "flatten"
-                sym_fl.attrs["shape"] = [np.product(attrs["shape"])]
+                sym_fl.attrs["shape"] = [np.prod(attrs["shape"])]
                 sym_fl.shape = sym_fl.attrs["shape"]
                 # start generate map
                 attrs_fl = get_merged_attrs(sym_fl)

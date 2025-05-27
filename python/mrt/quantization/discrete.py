@@ -120,9 +120,15 @@ def args_max_prec(prec: int):
     return _rule
 
 register_rules_with_default(
-        CONV2D, DENSE, MUL,
+        CONV2D,
+        requant_rule=args_max_prec(9),
+        scale_rule=scale_nn)
+
+register_rules_with_default(
+        DENSE, MUL,
         requant_rule=args_max_prec(8),
         scale_rule=scale_nn)
+
 register_rules_with_default(SUM, requant_rule=args_max_prec(10))
 
 def uniform_args_scale(args: typing.List[QuantInfo],
@@ -217,7 +223,10 @@ def op_clip_rules(s: QuantInfo):
     s.set_extra_attrs(
             a_min=s.parsed.a_min * scale,
             a_max=s.parsed.a_max * scale)
-    return s.copy()
+    out = s.copy()
+    out.attrs["a_min"]=s.parsed.a_min * scale
+    out.attrs["a_max"]=s.parsed.a_max * scale
+    return out
 
 register_rules_with_default(CLIP, op_rule=op_clip_rules)
 
@@ -228,13 +237,14 @@ def lut_max_prec(s: QuantInfo):
 def lut_scale_rules(s: QuantInfo):
     return s.precision_to_scale(LUT_OUT_PREC)
 
-
 def op_lut_rules(s: QuantInfo):
     alpha = bits_to_number(LUT_INP_PREC)
 
     X = s.args[0]
     offset = s.from_np_data(np.array(alpha, "int"))
     indices = op.add(X, offset).like(X)
+    indices = op.clip(indices, a_min=0,  a_max=2*alpha).like(X) #a_max=alpha+1)
+    indices = op.cast(indices, dtype="int32")
 
     # arg_min, arg_max = -s.data, s.data
     # if s.is_op(EXP):
@@ -255,6 +265,63 @@ register_rules_with_default(
         requant_rule=lut_max_prec,
         op_rule=op_lut_rules,
         scale_rule=lut_scale_rules)
+
+SOFTMAX_PREC = 15 # set by default
+def softmax_scale_rules(s: QuantInfo):
+    return s.precision_to_scale(SOFTMAX_PREC)
+
+def op_softmax_rules(s: QuantInfo):
+    lambd = 10
+    X = s.args[0] # get requant rule op
+    Xp = X.attrs["precision"]
+    Xs = X.scale  #X.attrs["precision"]
+    axis = s.attrs["axis"]
+    alpha = int(lambd * Xs)
+    var = s.from_np_data(np.array(alpha, "int"))
+
+    max_axis = op.max_axis(X, axis = axis, keepdims=True)
+    offset = op.sub(max_axis, var)
+    offset = op.pclip(offset, precision=Xp)
+    offset.set_extra_attrs(precision=Xp)
+    norm = op.sub(X, offset)
+    norm = op.nn_relu(norm)
+    norm = op.pclip(norm, precision=Xp)
+    norm.set_extra_attrs(precision=Xp)
+    # TODO: norm = op.cast(norm, dtype="int32")
+    norm = op.cast(norm, dtype="int32")
+
+    op_inp = np.arange(0, alpha+1) / Xs
+    table = np.exp(op_inp)
+    tprec = number_to_bits(math.exp(lambd))
+    table = np.clip(table, a_min=0, a_max=(bits_to_number(tprec)))
+    weight = np.round(table)
+    # weight = np.transpose(weight, (1, 0))
+    weight = s.from_np_data(weight)
+    out_lut = op.adv_index(weight, norm).like(s)
+    sum_lut = op.sum(out_lut, axis=axis, keepdims=True).like(out_lut)
+
+    oprec = min(SOFTMAX_PREC, 31 - tprec)
+    oscale = bits_to_number(oprec)
+    nd_oscale = s.from_np_data(np.array(oscale, "int"))
+    prob = op.mul(out_lut, nd_oscale)
+
+    half_lut = op.rs_pclip(sum_lut, s.from_const_data(1), precision=31)
+    half_lut.set_extra_attrs(precision=31)
+    prob = op.add(prob, half_lut)
+    out = op.div(prob, sum_lut)
+    out = op.cast(out, dtype="int32")
+    out = op.cast(out, dtype="float32")
+    out = op.pclip(out, precision=oprec)
+    out.set_extra_attrs(scale=oscale, precision=oprec)
+
+    return out
+
+register_rules_with_default(
+        SOFTMAX, LOG_SOFTMAX,
+        requant_rule=args_max_prec(SOFTMAX_PREC),
+        op_rule=op_softmax_rules,
+        scale_rule=softmax_scale_rules
+)
 
 @dataclass(repr=False)
 class Discretor(QuantInfo):

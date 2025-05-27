@@ -162,7 +162,7 @@ class FuseAvgPool2D(Transformer):
 
         assert len(X.shape) == 4
         if all([s == 1 for s in parsed.output_size]):
-            scale = 1 / np.product(X.shape[-2:])
+            scale = 1 / np.prod(X.shape[-2:])
             out = op.sum(X, axis=list(range(4))[-2:],
                     keepdims=True, exclude=False)
             scale = self.from_np_data(scale.astype(X.dtype))
@@ -193,6 +193,8 @@ class FuseAvgPool2D(Transformer):
 
 class FuseNaiveSoftmax(Transformer):
     def __call__(self, **kw):
+        return self # not fuse pass
+
         if self.is_op(SOFTMAX, LOG_SOFTMAX):
             return self.args[0]
         assert self.is_variable() or not self.args[0].is_op(SOFTMAX, LOG_SOFTMAX)

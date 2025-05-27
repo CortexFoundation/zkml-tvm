@@ -234,7 +234,7 @@ class Trace:
                 **kwargs)
 
     def export(self, target: str, use_simulator: bool = True, **kwargs):
-        assert target in ["sim-clip-round", "sim-clip", "sim-round", "sim", "circom", ]
+        assert target in ["sim-clip-round", "sim-clip", "sim-round", "sim", "fixpt"]
         kwargs.setdefault("tr_name", target)
 
         if "sim" in target:
@@ -243,7 +243,7 @@ class Trace:
                     with_clip = "clip" in target,
                     with_round = "round" in target,
                     **kwargs)
-        elif "circom" in target:
+        elif "fixpt" in target:
             return self.checkpoint_run(
                     fp.FixPoint.get_transformer(), **kwargs)
         elif "cvm" in target:
