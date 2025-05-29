@@ -74,7 +74,7 @@ with torch.no_grad():
     exported_program = torch.export.export(model, ( input_data, ))
     mod = from_exported_program(
             exported_program, keep_params_as_input=True)
-mod, params = relax.frontend.detach_params(mod)
+mod, bind_params = relax.frontend.detach_params(mod)
 # mod.show()
 mod: tvm.IRModule = mod
 
@@ -87,82 +87,55 @@ compiler: tvm.transform.Pass = relax.get_pipeline(
 
 data, label = ds.next()
 
-from mrt.frontend.tvm.relax import expr2symbol, symbol2expr
-from mrt.frontend.tvm.relax import mod2graph, graph2mod
+#  from mrt.frontend.tvm.relax import expr2symbol, symbol2expr
+#  from mrt.frontend.tvm.relax import mod2graph, graph2mod
 
-graph = mod2graph(mod, params)
+#  graph = mod2graph(mod, bind_params)
 
-#  for (name, func) in mod.functions_items():
-#      name: relax.expr.GlobalVar = name
-#      func: relax.Function = func
-#      #  print(type(func.params[0]), type(func.params[1]))
-#      num_input = int(func.attrs.get("num_input", 1))
-#      func_params = {k.name_hint: v.numpy() for (k, v) in zip(
-#          func.params[num_input:], params[name.name_hint])}
-#      #  print(name, type(func_params))
-#      #  print({k: v.shape for k, v in func_params.items()})
+#  import numpy as np
+#  from mrt.runtime import executor
 
-#      func, fparams = expr2symbol(func.body, func_params)
+# mod, fparams = graph2mod(graph)
+# out: np.ndarray = executor.infer(
+#         mod, fparams, data,
+#         opt_pass=compiler, **config)
+# print(type(out))
+# print(out.flatten()[:10])
+# print(out.shape, label)
+# print("agrmax of out:", np.argmax(out))
+# sys.exit()
 
-import numpy as np
-from mrt.runtime import executor
+from mrt.common.config import LogConfig
+LogConfig(
+    log_vot_cbs=[
+        #  "FuseConstant",
+        #  "Simulator",
+    ],
+    #  log_type_infer=[ config.SYMBOL_ALL_NEAR, ],
+).register_global()
 
-#  mod = symbol2expr(func, fparams)
-#  cmod = compiler(mod)
-#  cmod["main"].show()
-#  #  ex = tvm.compile(cmod, target="cuda")
-#  #  dev = tvm.device("cuda", 0)
-#  ex = tvm.compile(cmod, target=config["target"])
-#  dev = config["device"]
-#  vm = relax.VirtualMachine(ex, dev)
-
-#  gpu_data = tvm.nd.array(data.astype("float32"), dev)
-#  gpu_params = [tvm.nd.array(p, dev) for p in params["main"]]
-
-#  test_executor = runtime.create_executor(
-#          mod, fparams, **config, opt_pass=compiler)
-#  gpu_out = runtime.run_executor(test_executor, gpu_data)
-#  print(test_executor.input_info)
-#  for (mp, p) in zip(test_executor.dev_params[1:], gpu_params):
-#      assert mp.shape == p.shape, f"{mp.shape} vs. {p.shape}"
-
-#  gpu_out: tvm.ir.container.Array = vm["main"](
-#          gpu_data, *test_executor.dev_params[1:])
-#  print(gpu_out)
-
-#  from mrt import types
-#  gpu_out = types.to_numpy(gpu_out)[0]
-#  print(gpu_out.shape, label, label.shape)
-#  print(np.argmax(gpu_out))
-#  sys.exit()
-
-mod, fparams = graph2mod(graph)
-out: np.ndarray = executor.infer(
-        mod, fparams, data,
-        opt_pass=compiler, **config)
-print(type(out))
-print(out.flatten()[:10])
-print(out.shape, label)
-print("agrmax of out:", np.argmax(out))
-sys.exit()
-
-from mrt import stats
-from mrt.trace import Trace
-tr = Trace.from_expr(func, fparams, model_name=model_name)
-tr.bind_dataset(ds, stats.ClassificationOutput).log()
+from mrt.runtime import analysis
+from mrt.api import Trace, TraceConfig
+TraceConfig(
+    calibrate_repeats=16,
+    calibrate_sampling=None,
+    force_trace_or_cb="quantize",
+).register_global()
+tr = Trace.from_module(
+        mod, bind_params,
+        model_name=model_name,)
+#  tr = Trace.from_expr(func, fparams, model_name=model_name)
+tr.bind_dataset(ds, analysis.ClassificationOutput).log()
 
 # tr.validate_accuracy(max_iter_num=20, **config)
 # sys.exit()
 
-dis_tr = tr.discrete(
-        calibrate_repeats=16,
-        force=True
-        )
+dis_tr = tr.discrete()
 sim_tr = dis_tr.export("sim").log()
 sim_clip_tr = dis_tr.export("sim-clip").log()
 sim_round_tr = dis_tr.export("sim-round").log()
 sim_quant_tr = dis_tr.export("sim-clip-round").log()
-circom_tr = dis_tr.export("circom").log()
+circom_tr = dis_tr.export("fixpt").log()
 
 
 # fuse_tr = tr.fuse().log()
@@ -184,10 +157,11 @@ circom_tr = dis_tr.export("circom").log()
 
 tr.validate_accuracy(
         sim_tr,
-        sim_clip_tr,
-        sim_round_tr,
-        sim_quant_tr,
+        #  sim_clip_tr,
+        #  sim_round_tr,
+        #  sim_quant_tr,
         max_iter_num=200,
+        opt_pass=compiler,
         **config)
 sys.exit()
 

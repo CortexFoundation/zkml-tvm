@@ -1,10 +1,9 @@
 import typing
 
 from .symbol import *
-from .types import ParametersT
-from .transform import Transformer
+from mrt.common.types import ParametersT
 
-from . import op, optype, config
+from . import op, optype
 
 def set_input_shape(
         symbol: Symbol, params: ParametersT,
@@ -28,7 +27,7 @@ def set_input_shape(
     # return out
 
 def format_print(
-        symbol: Symbol, params: ParametersT,
+        graph: Symbol, params: ParametersT,
         name: str = "", # hint name for print header
         prefix: int = 0, # prefix layers to print
         suffix: int = 0, # suffix layers to print
@@ -51,8 +50,7 @@ def format_print(
             info["params"] += np.prod(sym.shape or (0))
         info["ops"] += op.is_operator(sym)
 
-    with config.Pass():
-        visit(symbol, _calc)
+    visit(graph, _calc)
 
     if short:
         prefix = prefix or 5
@@ -77,8 +75,8 @@ def format_print(
         selected = sym.name in selects or sym.op_name in selects
         passed = passed and selected
         passed and print(sym)
-    with config.Pass():
-        visit(symbol, _print)
+
+    visit(graph, _print)
 
     print("_" * len(msg))
     print("Layers: {} | Operators: {} | Parameters: {}".format(

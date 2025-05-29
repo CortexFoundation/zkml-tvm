@@ -3,13 +3,15 @@ from collections import namedtuple
 
 import numpy as np
 
-from . import op, inference
-from .opns import *
-from .symbol import *
-from .attrs import *
-from .utils import N, product
+from mrt.mir import op
+from mrt.mir.opns import *
+from mrt.mir.symbol import *
+from mrt.mir.attrs import *
+
+from mrt.runtime import inference
+from mrt.common.utils import N, product
+
 from .transform import Transformer
-from .inference import np_executor, run
 
 # TODO: add op pass register map.
 
@@ -28,11 +30,10 @@ class FuseConstant(Transformer):
 
     def __call__(self: Transformer, **kw):
         if self.is_operator() and all([c.is_param() for c in self.args]):
-            #  print("fuse constant:", self)
-            data = inference.run(
-                    self, [c.ndarray() for c in self.args])
+            data = inference.run_single(
+                    self, [a.numpy() for a in self.args])
             return self.as_parameter(data)
-        elif self.is_op(ADD, SUB, BIAS_ADD):
+        elif self.is_op(ADD, SUB): # , BIAS_ADD):
             strips = []
             for arg in self.args:
                 if arg.is_param() and self.np_is_zero(arg.numpy()):
@@ -44,15 +45,16 @@ class FuseConstant(Transformer):
         elif self.is_op(SLICE_LIKE):
             if not self.args[0].is_param():
                 return
-            arg1 = np.zeros(self.args[1].shape, self.args[1].dtype)
-            data = inference.run(self, [
-                self.args[0].ndarray(), tvm.nd.array(arg1)])
+            a, b = self.args
+            arg1 = np.zeros(b.shape, b.dtype)
+            data = inference.run_single(
+                self, [a.numpy(), np.zeros(b.shape, b.dtype)])
             return self.as_parameter(data)
         elif self.is_op(REQUANT):
             if self.parsed.rescale == 1:
                 return self.args[0]
         elif self.is_op(ZEROS_LIKE, ONES_LIKE):
-            data = inference.run(self, [])
+            data = inference.run_single(self, [])
             return self.as_parameter(data)
 
 
@@ -106,8 +108,11 @@ class FuseBatchNorm(Transformer):
             W = X.from_np_data(gamma.reshape(reshp))
             out = op.mul(X, W)
 
+        bias = bias.reshape([s if i == parsed.axis else 1 \
+                for i, s in enumerate(out.shape)])
         B = out.like(self).from_np_data(bias)
-        out = op.bias_add(out, B, axis=parsed.axis)
+        out = op.add(out, B)
+        # out = op.bias_add(out, B, axis=parsed.axis)
         return out.like(self)
 
 class FuseTupleGetItem(Transformer):
@@ -162,9 +167,8 @@ class FuseAvgPool2D(Transformer):
 
         assert len(X.shape) == 4
         if all([s == 1 for s in parsed.output_size]):
-            scale = 1 / np.prod(X.shape[-2:])
-            out = op.sum(X, axis=list(range(4))[-2:],
-                    keepdims=True, exclude=False)
+            scale = np.array(1 / np.prod(X.shape[-2:]))
+            out = op.sum(X, axis=list(range(4))[-2:], keepdims=True)
             scale = self.from_np_data(scale.astype(X.dtype))
             return op.mul(out, scale).like(self)
         elif ous[0] > ins[0] or ous[1] > ins[1]:

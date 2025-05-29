@@ -14,6 +14,7 @@ from mrt.frontend.tvm.types import *
 
 from mrt.mir.symbol import Symbol
 from mrt.dataset.base import Dataset
+#  from mrt.mir.model import Graph
 
 # from .types import *
 #  from .symbol import Symbol
@@ -46,6 +47,7 @@ Executor = namedtuple("Executor",
                       ["vm", "dev_params", "input_info", "device"])
 
 def create_executor(
+        #  graph: Graph,
         mod: tvm.IRModule, params: ParametersT,
         device: tvm.runtime.Device = tvm.runtime.cpu(),
         target: tvm.target.Target = tvm.target.arm_cpu(),
@@ -73,7 +75,8 @@ def run_executor(
         executor: Executor,
         data: typing.Optional[np.ndarray] = None,
         data_dict: ParametersT = {},
-        ) -> typing.List[np.ndarray]:
+        func_name: str = "main",
+        ) -> OpNumpyT:
     (vm, dev_params, input_info, device) = executor
     for k, v in input_info.items():
         (index, shape, dtype) = v
@@ -88,23 +91,24 @@ def run_executor(
         assert dtype == val.dtype, \
                 f"{k} dtype not matched: {dtype} vs. {val.dtype}"
 
-    out = vm["main"](*dev_params)
-    assert isinstance(out, (list, tvm.ir.container.Array)), type(out)
+    out = vm[func_name](*dev_params)
     return to_numpy(out)
 
 def infer(mod: tvm.IRModule, params: ParametersT,
           data: typing.Optional[np.ndarray] = None,
           data_dict: ParametersT = {},
           device: tvm.runtime.Device = tvm.runtime.cpu(),
+          func_name: str = "main",
           **kwargs) -> OpNumpyT:
     executor = create_executor(mod, params, device=device, **kwargs)
-    out = run_executor(executor, data, data_dict)
+    out = run_executor(executor, data, data_dict, func_name)
+    return out
 
     #  print("infer:", type(out))
 
-    if len(out) == 1:
-        out = out[0]
-    return out
+    #  if len(out) == 1:
+    #      out = out[0]
+    #  return out
 
 
 # def create_executor(

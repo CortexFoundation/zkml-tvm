@@ -4,27 +4,38 @@ import typing
 import os
 import pickle
 import numpy as np
-from functools import wraps
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field
 
-import tvm
-from tvm import relay, ir
-from tvm.contrib import graph_executor as graph
+from .common.types import *
+from .common import config
 
-from . import runtime, config
-from . import op, optype, fuse, helper
-from . import calibrate as calib
-from . import fixed_point as fp
-from . import segement as seg
-from .stats import *
-from .transform import Transformer, TransformerT
-from .discrete import Discretor
-from .precision import PrecisionRevisor
-from .types import *
-from .symbol import *
-from .frontend.expr import symbol2expr, expr2symbol
-from .dataset import Dataset
+from .runtime import executor
+from .runtime.analysis import *
+
+from .mir import op, optype, helper
+#  from .mir.model import MultiHeadSymbol
+from .mir.symbol import *
+
+from .dataset.base import Dataset
+from .frontend.tvm import relax as relax_api
+from .frontend.tvm.types import *
+
+from .quantization import segement as seg
+from .quantization import fixed_point as fp
+from .quantization import fuse, calibrate as calib
+
+from .quantization.discrete import Discretor
+from .quantization.precision import PrecisionRevisor
+from .quantization.transform import Transformer, TransformerT
+
+@dataclass
+class TraceConfig(config._BaseConfig):
+    calibrate_repeats: int = 16
+    calibrate_sampling: typing.Optional[typing.Callable] = None
+    force_trace_or_cb: typing.Optional[str]  = None
+    """ force trace or callback func to run. """
+
 
 @dataclass
 class Trace:
@@ -32,23 +43,29 @@ class Trace:
     """ Model Name """
     name: str
     """ Trace Name """
-    symbol: Symbol
+    graph: MultiHeadSymbol
     params: ParametersT
+    #  params: ParametersT
 
     # post init and inherit
     _force: bool = False
     _dataset: typing.optional[Dataset] = None
     _stat_type: typing.Optional[typing.Type[Statistics]] = None
 
+    symbol: typing.Optional[Symbol] = None
+    tuple_names: typing.List[str] = field(init=False)
+
     # post init and no inherit
     _sym_inputs: typing.List[Symbol] = field(init=False)
     _sym_params: typing.List[Symbol] = field(init=False)
-    _executor: typing.Optional[graph.GraphModule] = None
+    _executor: typing.Optional[executor.Executor] = None
 
     BASE_DIR: typing.ClassVar[str] = "./zkml_data"
 
     def __post_init__(self):
         """ Verify inputs and params. """
+        self.tuple_names, self.symbol = self.graph.as_tuple()
+
         self._sym_inputs = []
         self._sym_params = []
         def _init(sym: Symbol):
@@ -56,20 +73,19 @@ class Trace:
                 self._sym_inputs.append(sym)
             elif op.is_param(sym, self.params):
                 data = self.params[sym.name]
-                assert sym.shape is None or \
-                        list(sym.shape) == list(data.shape), (
-                    "param:{} shape inconsistent: {} vs. {}"
-                ).format(sym, sym.shape, data.shape)
-                assert sym.dtype == data.dtype, (
-                    "params:{} dtype inconsistent: {} vs. {}"
-                ).format(sym.name, sym.dtype, data.dtype)
+                assert sym.shape == list(data.shape), \
+                   f"param:{sym.name} shape inconsistent: " + \
+                   f"{sym.shape} vs. {data.shape}"
+                assert sym.dtype == data.dtype, \
+                   f"param:{sym.name} dtype inconsistent: " + \
+                   f"{sym.dtype} vs. {data.dtype}"
                 self._sym_params.append(sym)
-        with config.Pass():
-            visit(self.symbol, _init)
+        visit(self.symbol, _init)
 
-        # if len(self._sym_inputs) > 1:
-        #     print([str(s) for s in self._sym_inputs])
-        #     assert False
+        #  # if len(self._sym_inputs) > 1:
+        #  #     print([str(s) for s in self._sym_inputs])
+        #  #     assert False
+        # remove unused parameters
         self.params = {s.name: self.params[s.name] \
                 for s in self._sym_params}
 
@@ -79,7 +95,7 @@ class Trace:
 
     @property
     def input_shapes(self) -> typing.List[ShapeT]:
-        return [i.attrs["shape"] for i in self._sym_inputs]
+        return [i.shape for i in self._sym_inputs]
 
     @property
     def input_shape_dict(self) -> typing.Dict[str, ShapeT]:
@@ -91,7 +107,7 @@ class Trace:
         # dataset.reset()
         data, label = dataset.next()
         # verify and assert the input data
-        runtime.validate_runtime_inputs(self._sym_inputs, data)
+        # executor.validate_runtime_inputs(self._sym_inputs, data)
 
         dataset.reset()
         self._dataset = dataset
@@ -133,19 +149,20 @@ class Trace:
             data: typing.Optional[np.ndarray] = None,
             **kwargs,) -> np.ndarray:
         if self._executor is None:
-            self._executor = runtime.create_executor(
-                    symbol2expr(self.symbol, self.params),
+            self._executor = executor.create_executor(
+                    relax_api.graph2mod(self.graph, self.params),
                     self.params, **kwargs)
 
-        # data = runtime.validate_runtime_inputs(self._sym_inputs, data)
-        res = runtime.run_executor(self._executor, data)
+        res = executor.run_executor(self._executor, data)
         assert len(res) == 1
         return res[0]
 
     def _new(self, tr_name: str,
-            symbol: Symbol, params: ParametersT) -> Trace:
-        return Trace(self.model, tr_name,
-                symbol, params,
+             graph: MultiHeadSymbol,
+             params: ParametersT) -> Trace:
+        return Trace(
+                self.model, tr_name,
+                graph, params,
                 _force = self._force,
                 _dataset = self._dataset,
                 _stat_type = self._stat_type)
@@ -153,16 +170,20 @@ class Trace:
     def checkpoint_run(self,
             *callbacks: typing.List[TransformerT],
             tr_name: typing.Optional[str] = None,
-            force: bool = False,
             **kwargs) -> Trace:
-        self._force = self._force or force
+        C = TraceConfig.G()
 
         assert len(callbacks) > 0
         tr_name = tr_name or callbacks[-1].__name__
+
+        force = (C.force_trace_or_cb in \
+                [tr_name, *[cb.__name__ for cb in callbacks]])
+        self._force = self._force or force
+
         tr_path = self._get_checkpoint_path(tr_name)
         if path.exists(tr_path) and not self._force:
             out = Trace.load(tr_path)
-            return self._new(tr_name, out.symbol, out.params)
+            return self._new(tr_name, out.graph, out.params)
 
         out: Trace = self
         for cb in callbacks:
@@ -171,21 +192,21 @@ class Trace:
             print("Apply Trace: {:25} Transformer: {}".format(
                 tr_name, cb.__name__))
             symbol = cb(out.symbol, params, **kwargs)
-            out = out._new(tr_name, symbol, params)
+            graph = MultiHeadSymbol.from_tuple(
+                    self.tuple_names, symbol)
+            out = out._new(tr_name, graph, params)
         out.dump(tr_path)
+        #  out = Trace.load(tr_path)
         return out
 
-    def discrete(
-            self,
-            calibrate_repeats: int = 16,
-            calibrate_sampling: calib.SamplingFuncT = None,
-            force: bool = False) -> Trace:
-        fuse_tr = self.fuse(force=force)
+    def discrete(self) -> Trace:
+        fuse_tr = self.fuse()
         seg_tr = fuse_tr.checkpoint_run(seg.Spliter.get_transformer())
 
+        C = TraceConfig.G()
         calib_tr = seg_tr.calibrate(
-                repeats=calibrate_repeats,
-                sampling_func=calibrate_sampling)
+                repeats=C.calibrate_repeats,
+                sampling_func=C.calibrate_sampling)
         quant_tr = calib_tr.quantize()
         quant_tr = quant_tr.checkpoint_run(
                 seg.Merger.get_transformer(),
@@ -216,9 +237,9 @@ class Trace:
             data, _ = self._dataset.next()
             out = out.checkpoint_run(
                     calib.Calibrator.get_transformer(),
-                    data = tvm.nd.array(data),
+                    data = data,
                     #  tr_name = tr_name,
-                    tr_name = "%s_run_%d"%(tr_name, i),
+                    tr_name = f"{tr_name}_run_{i}",
                     **kwargs)
         out = out.checkpoint_run(
                 calib.SymmetricMinMaxSampling.get_transformer(),
@@ -253,7 +274,8 @@ class Trace:
 
     def print(self, **kwargs):
         helper.format_print(
-                self.symbol, self.params, self.name, **kwargs)
+                self.symbol, self.params,
+                name=self.name, **kwargs)
 
     def log(self, **kwargs):
         fname = self._get_checkpoint_path(self.name) + ".log"
@@ -266,6 +288,7 @@ class Trace:
 
     def subgraph(self, inames=[], onames=[]) -> Trace:
         out = op.subgraph(self.symbol, inames, onames)
+        out = MultiHeadSymbol.from_symbol(out)
         return self._new("subgraph", out, self.params)
 
     def _get_checkpoint_path(self, tr_name: str = None):
@@ -278,13 +301,13 @@ class Trace:
     def dump(self, tr_path: str = None):
         tr_path = tr_path or self._get_checkpoint_path()
         print("Dump  Trace: {:20} into {}".format(self.name, tr_path))
-        data = dump_json(self.symbol)
-        data.update({
+        data = {
             "_model_name": self.model,
             "_trace_name": self.name,
-            "params": {k: v.numpy() \
-                    for k, v in self.params.items()},
-        })
+            "tuple_names": self.tuple_names,
+            "sym": dump_json(self.symbol),
+            "prm": {k: v for k, v in self.params.items()}
+        }
         try:
             with open(tr_path, "wb") as f:
                 pickle.dump(data, f)
@@ -300,20 +323,33 @@ class Trace:
 
         model  = data["_model_name"]
         name = data["_trace_name"]
-        params = {k: tvm.nd.array(v) \
-                for k, v in data["params"].items()}
-        symbol = load_json(data, params=params)
+        params = {k: v for k, v in data["prm"].items()}
+        symbol = load_json(data["sym"], params=params)
+        graph = MultiHeadSymbol.from_tuple(
+                data["tuple_names"], symbol)
+        #  symbol = load_json(data, params=params)
         print("Load  Trace: {:20} from {}".format(name, tr_path))
-        return Trace(model, name, symbol, params)
+        return Trace(model, name, graph, params)
+
+    @staticmethod
+    def from_module(
+            mod: TVMModule,
+            bind_params: typing.Optional[list] = None,
+            tr_name: str = "from_mod",
+            model_name: str = "unknown-model"):
+        graph, params = relax_api.mod2graph(mod, bind_params)
+        return Trace(model_name, tr_name, graph, params)
 
     @staticmethod
     def from_expr(
-            expr: RelayExpr, params: ParametersT,
+            expr: TVMExpr, params: ParametersT,
             tr_name = "from_expr",
             model_name="unknown-model") -> Trace:
         print("Init  Trace: {:20} from model {}'s expr".format(
             tr_name, model_name))
-        symbol, params = expr2symbol(expr, params)
-        return Trace(model_name, tr_name, symbol, params)
+        symbol, params = relax_api.expr2symbol(expr, params)
+        graph = MultiHeadSymbol.from_symbol(symbol)
+        return Trace(model_name, tr_name, graph, params)
+        #  return Trace(model_name, tr_name, symbol, params)
 
 

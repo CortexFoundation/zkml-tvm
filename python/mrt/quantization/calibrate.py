@@ -7,10 +7,11 @@ import tvm
 
 from dataclasses import dataclass, field, InitVar
 
-from .types import *
-from .symbol import *
-from . import runtime
-from . import op, opns, inference
+from mrt.mir import op, opns
+from mrt.mir.symbol import *
+from mrt.runtime import inference
+from mrt.frontend.tvm.types import *
+
 from .transform import Transformer
 
 SamplingFuncT = typing.Callable[
@@ -19,14 +20,14 @@ SamplingFuncT = typing.Callable[
 @dataclass(repr=False)
 class Calibrator(Transformer):
     """ skip dump, and restore from np_data. """
-    nd_data: OpOutputT | None = field(repr=False, default=None)
+    raw_data: OpOutputT | None = field(repr=False, default=None)
     """ calibrate may be processed multi-times """
     data: typing.List[OpNumpyT] = field(default_factory=list)
 
     def _rand_data(self,
             enabled: bool = False,
             absmax: float | None = None,
-    ):
+    ) -> np.ndarray:
         assert enabled, "symbol:{} don't have data".format(
                 self.name)
         out = np.random.randn(*self.shape)
@@ -35,10 +36,10 @@ class Calibrator(Transformer):
             assert absmax > 0
             norm = np.abs(out).max()
             out = out * absmax / norm
-        return tvm.nd.array(out)
+        return out
 
     def __call__(self,
-            data: tvm.nd.NDArray | None = None,
+            data: np.ndarray | None = None,
             data_dict: ParametersT = {},
             random_config: typing.Dict[str, typing.Any] = {},
             sampling_func: SamplingFuncT = None,
@@ -52,24 +53,24 @@ class Calibrator(Transformer):
         elif self.is_param():
             out = self.params[self.name]
         else:
-            out = inference.run(
-                    self, [a.nd_data for a in self.args],
+            single_op = op.retrieve_operator(self)
+            out = inference.run_single(
+                    single_op,
+                    [a.raw_data for a in self.args],
                     **kwargs)
-            out = to_ndarray(out)
 
-        assert isinstance(out, (tvm.nd.NDArray, list)), type(out)
-        if isinstance(out, tvm.nd.NDArray):
-            self._assert(out.dtype, self.dtype)
+        assert isinstance(out, (np.ndarray, list)), type(out)
+        if isinstance(out, np.ndarray):
+            self._assert(out.dtype.name, self.dtype)
             self._assert(out.shape, self.shape)
         else:
-            self._assert([o.dtype for o in out], self.dtype)
+            self._assert([o.dtype.name for o in out], self.dtype)
             self._assert([o.shape for o in out], self.shape)
 
-        self.nd_data = out
-        data = to_numpy(out)
+        self.raw_data = out
         if sampling_func is not None:
-            data = sampling_func(data)
-        self.data.append(data)
+            out = sampling_func(out)
+        self.data.append(out)
 
     def sampling(self, data):
         if isinstance(data, list):
@@ -105,6 +106,7 @@ class Sampling(Transformer):
         raise NotImplementedError()
 
     def __call__(self, origin: Calibrator, **kw):
+        print(type(origin), origin)
         if self.is_op(opns.CLIP):
             # TODO: remove clip if threshold is less than a_max
             a_min, a_max = self.parsed.a_min, self.parsed.a_max

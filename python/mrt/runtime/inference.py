@@ -1,43 +1,45 @@
 import typing
 import numpy as np
 
-from .symbol import *
-from .opns import *
-from .frontend.expr import symbol2expr
-from .transform import WithParameters
-from . import op, runtime, types
+from mrt.mir.symbol import *
+from mrt.mir.opns import *
+from mrt.frontend.tvm.relax import symbol2expr
+from mrt.frontend.tvm import types, relax
+from mrt.runtime import executor
 
-def run(sym: WithParameters,
-        args_data: typing.List[OpOutputT],
-        op_single: bool = True,
-        **kwargs) -> OpOutputT:
+from mrt.quantization.transform import WithParameters
+from mrt.mir import op
+
+def run_single(
+        sym: WithParameters,
+        args_data: typing.List[OpNumpyT],
+        **kwargs) -> OpNumpyT:
     assert op.is_operator(sym), sym
+    sym = op.retrieve_operator(sym)
 
     if sym.is_op(TUPLE_GET_ITEM):
         return args_data[0][sym.parsed.index]
     elif sym.is_op(REQUANT):
-        return tvm.nd.array(sym.parsed.rescale * args_data[0].numpy())
+        # it's type is np.float32/64, use np.array to wrap.
+        return np.array(sym.parsed.rescale * args_data[0])
     elif sym.is_op(ARANGE):
         args = [a.numpy().item() for a in args_data]
-        return tvm.nd.array(np.arange(*args, **sym.attrs))
+        return np.arange(*args, **sym.attrs)
     elif sym.is_op("stack"):
-        args = [types.to_numpy(a) for a in args_data]
-        return types.to_ndarray(np.stack(*args, **sym.attrs))
+        args = [a for a in args_data]
+        return np.stack(*args, **sym.attrs)
     elif sym.is_op("meshgrid"):
-        args = [types.to_numpy(a) for a in args_data[0]]
-        return types.to_ndarray(np.meshgrid(*args, **sym.attrs))
+        args = [a for a in args_data[0]]
+        return np.meshgrid(*args, **sym.attrs)
     elif sym.is_op(ZEROS_LIKE):
-        return tvm.nd.array(np.zeros(sym.shape, sym.dtype))
+        return np.zeros(sym.shape, sym.dtype)
     elif sym.is_op(ONES_LIKE):
-        return tvm.nd.array(np.ones(sym.shape, sym.dtype))
+        return np.ones(sym.shape, sym.dtype)
 
-    if op_single:
-        sym = sym.copy(args=[
-            op.as_variable(a, d.numpy().shape, d.numpy().dtype.name) \
-                    for a, d in zip(sym.args, args_data)])
-    expr = symbol2expr(sym)
     params = { c.name: args_data[i] for i, c in enumerate(sym.args) }
-    return runtime.infer(expr, params, **kwargs)
+    mod = relax.graph2mod(sym, params)
+    # expr = symbol2expr(sym)
+    return executor.infer(mod, params, **kwargs)
 
 def _mx_executor(sym: Symbol, inputs):
     from mxnet import nd

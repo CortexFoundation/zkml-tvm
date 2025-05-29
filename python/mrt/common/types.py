@@ -5,7 +5,7 @@ import numpy as np
 
 OpOutputT = typing.Union[tvm.nd.NDArray, list]
 OpNumpyT = typing.Union[np.ndarray, list]
-ParametersT = typing.Dict[str, OpOutputT]
+ParametersT = typing.Dict[str, OpNumpyT]
 AttrsT = typing.Dict[str, typing.Any]
 
 ShapeT = typing.List[int]

@@ -3,7 +3,8 @@ from dataclasses import dataclass, fields, Field
 
 import tvm
 
-from .types import *
+from mrt.common.types import *
+# from .types import *
 from .op import *
 
 @dataclass
@@ -18,9 +19,9 @@ class _BaseAttrs:
             #              "{}({}) vs. {} in {}"
             #              ).format(type(v), v, ftypes[k], cls.__name__)
         except Exception as e:
-            print("Attr parsed error, expect: {}, get {}.".format(
-                list(ftypes.keys()), list(attrs.keys())
-            ))
+            print(f"Attr:{get_class_name(cls)} parsed error,",
+                  f"expect: {list(ftypes.keys())},",
+                  f"get {list(attrs.keys())}")
             raise e
         return cls(**data)
 
@@ -50,8 +51,8 @@ def _format_as_tuple(attrs: AttrsT, *keys):
 @dataclass
 @register_attrs(CLIP)
 class ClipAttrs(_BaseAttrs):
-    a_min: float
-    a_max: float
+    min: float
+    max: float
 
 @dataclass
 @register_attrs(PCLIP)
@@ -59,13 +60,13 @@ class PClipAttrs(_BaseAttrs):
     precision: int
 @dataclass
 @register_attrs(RS_PCLIP)
-class RequantAttrs(PClipAttrs):
+class RSPClipAttrs(PClipAttrs):
     # shiftbit: int
     precision: int
 
 @dataclass
 @register_attrs(RESHAPE)
-class PClipAttrs(_BaseAttrs):
+class ReshapeAttrs(_BaseAttrs):
     shape: list
 
 @dataclass
@@ -130,8 +131,8 @@ class Conv2DAttrs(_BaseAttrs):
     padding: typing.Tuple[int, int, int, int]
     dilation: typing.Tuple[int, int]
     groups: int
-    channels: int
-    kernel_size: typing.Tuple[int, int]
+    #  channels: int
+    #  kernel_size: typing.Tuple[int, int]
     data_layout: str
     kernel_layout: str
     out_layout: str
@@ -144,6 +145,7 @@ class Conv2DAttrs(_BaseAttrs):
                 "kernel_size", "padding")
         attrs.setdefault("kernel_layout", "OIHW")
         attrs.setdefault("data_layout", "NCHW")
+        #  attrs.setdefault("channels", None)
         attrs.setdefault("out_layout", "")
         attrs.setdefault("out_dtype", "")
         return super().parse(attrs)

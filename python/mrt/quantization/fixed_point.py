@@ -3,13 +3,16 @@ from __future__ import annotations
 import numpy as np
 from dataclasses import dataclass
 
-from . import op
-from .opns import *
-from .precision import *
-from .discrete import QuantInfo
-from .utils import number_to_bits
-from .attrs import PClipAttrs, RequantAttrs
-from .symbol import filter_operators
+from mrt.mir import op
+from mrt.mir.opns import *
+from mrt.mir.symbol import filter_operators
+from mrt.mir.attrs import PClipAttrs, RequantAttrs
+
+from mrt.quantization.precision import *
+from mrt.quantization.discrete import QuantInfo
+
+from mrt.common.utils import number_to_bits
+
 from .transform import Transformer
 
 @dataclass(repr=False)
@@ -42,7 +45,10 @@ class Simulator(QuantInfo):
                     out = self.round(out)
             if with_clip:
                 pos = self.int_max()
-                out = op.clip(out, a_min=-pos, a_max=pos)
+                # relax api from a_min/a_max to min/max
+                out = op.clip(out, min=-pos, max=pos)
+                # print(out)
+                # sys.exit()
         return out.like(self)
 
 

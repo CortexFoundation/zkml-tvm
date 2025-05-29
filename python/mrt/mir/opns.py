@@ -6,7 +6,7 @@ DROP_OUT = "nn.dropout"
 CONV2D = "nn.conv2d"
 DENSE = "nn.dense"
 BATCH_NORM = "nn.batch_norm"
-BIAS_ADD = "nn.bias_add"
+# BIAS_ADD = "nn.bias_add"
 RELU = "nn.relu"
 LEAKY_RELU = "nn.leaky_relu"
 ADAPTIVE_AVG_POOL2D = "nn.adaptive_avg_pool2d"
@@ -49,11 +49,13 @@ SLICE_LIKE = "slice_like"
 GET_VALID_COUNT = "vision.get_valid_counts"
 NON_MAX_SUPRESSION = "vision.non_max_suppression"
 
+# relax clip attrs from a_min/a_max to min/max
 CLIP = "clip"
 CEIL = "ceil"
 RIGHT_SHIFT = "right_shift"
-# AS_TYPE = "astype"
-CAST = "cast"
+# relax support astype instead of cast
+AS_TYPE = "astype"
+#  CAST = "cast"
 
 ADV_INDEX = "adv_index"
 
@@ -65,6 +67,7 @@ CALL_DPS_PACKED = "call_dps_packed"
 ADD = "add"
 SUB = "subtract"
 MUL = "multiply"
+MATMUL = "matmul"
 DIV = "divide"
 
 # ======= unary ops ==============

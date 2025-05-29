@@ -9,17 +9,12 @@ from tvm.runtime import _ffi_node_api
 
 import numpy as np
 
-from mrt.mir import op, model
+from mrt.mir import op
 from mrt.mir.opns import *
 from mrt.mir.symbol import *
+from mrt.common.utils import product
 
 from .types import *
-
-# from ..opns import *
-# from ..symbol import *
-# from ..types import *
-# from .. import op
-# from ..model import Graph
 
 __ALL__ = [
    "expr2symbol", "symbol2expr",
@@ -27,7 +22,8 @@ __ALL__ = [
    "tvm_type_infer" ]
 
 def tvm_type_infer(expr: Expr):
-    return expr
+    builder = relax.BlockBuilder()
+    return builder.normalize(expr)
 
 NamedParametersT = typing.Dict[str, R.Tensor]
 
@@ -36,41 +32,50 @@ def _list_node_attrs_names(obj):
     size = fnames(-1)
     return sorted([fnames(i) for i in range(size)])
 
-def mod2graph(mod: tvm.IRModule, bind_params: typing.Optional[list] = None) -> model.Graph:
+def mod2graph(mod: tvm.IRModule, bind_params: typing.Optional[list] = None) -> (MultiHeadSymbol, ParametersT):
     if bind_params is None:
         mod, bind_params = relax.frontend.detach_params(mod)
 
-    graph: model.Graph = model.Graph()
+    graph: MultiHeadSymbol = MultiHeadSymbol()
+    params: ParametersT = {}
     for (name, func) in mod.functions_items():
         name = name.name_hint
         num_input = int(func.attrs.get("num_input", 1))
         fparams = {k.name_hint: v.numpy() for (k, v) in zip(
             func.params[num_input:], bind_params[name])}
-        graph[name], fparams  = expr2symbol(func.body, fparams)
-        graph.merge_mod_params(fparams)
-    return graph
+        graph[name], fparams = expr2symbol(func.body, fparams)
+        for k, v in fparams.items():
+            if k not in params:
+                continue
+            assert np.allclose(params[k], fparams), \
+                f"parameter:{k} not equal, don't know use which one."
+        params.update(fparams)
+    return (graph, params)
 
-def graph2mod(graph: model.Graph) -> (tvm.IRModule, ParametersT):
+def graph2mod(graph: Graph, params: ParametersT) -> tvm.IRModule:
     expr_map = {}
 
+    if isinstance(graph, Symbol):
+        graph = MultiHeadSymbol.from_symbol(graph)
+
     builder = relax.BlockBuilder()
-    for name, sym in graph.mod.items():
-        symbol2expr(sym, graph.params,
+    for name, sym in graph.items():
+        symbol2expr(sym, params,
                     expr_map=expr_map, clear_map=False,
                     func_name=name, builder=builder)
     mod = builder.finalize()
     assert relax.analysis.well_formed(mod)
-    return mod, graph.params
-
+    return mod
 
 def expr2symbol(
-        expr: Expr,
+        expr: TVMExpr,
         params: ParametersT = {},
-        ):
+        ) -> (Symbol, ParametersT):
     params = {k: v for k, v in params.items()}
 
     symbol_map = {}
     binding_info: typing.List[VarBinding] = []
+    builder = relax.BlockBuilder()
     def _cast_relax(node: Expr):
         if node in symbol_map:
             return
@@ -79,15 +84,11 @@ def expr2symbol(
             return
 
         try:
-            dtype = get_struct_info(node.struct_info, "dtype")
+            norm_node = builder.normalize(node)
+            shape = get_struct_info(norm_node.struct_info, "shape")
+            dtype = get_struct_info(norm_node.struct_info, "dtype")
         except Exception as e:
-            # print(type(node))
-            dtype = None
-
-        try:
-            shape = get_struct_info(node.struct_info, "shape")
-        except Exception as e:
-            shape = None
+            shape, dtype = None, None
 
         attrs = { "extra_attrs": { "shape": shape, "dtype": dtype }, }
 
@@ -121,6 +122,13 @@ def expr2symbol(
             args = [ symbol_map[f] for f in node.fields ]
             out = op._new_op(TUPLE, *args, **attrs)
         elif isinstance(node, Call):
+            if shape is None:
+                #  print(node)
+                #  norm_node = builder.normalize(node)
+                #  print(norm_node)
+                #  print(norm_node.struct_info)
+                #  print(get_struct_info(norm_node.struct_info, "shape"))
+                sys.exit()
             if node.attrs is not None:
                 attr_names = _list_node_attrs_names(node.attrs)
                 attrs.update({k: convert_to_py(
@@ -194,7 +202,7 @@ def symbol2expr(
         clear_map: bool = True,
         func_name: str = "main",
         builder: typing.Optional[relax.BlockBuilder] = None,
-        ) -> tvm.ir.IRModule:
+        ) -> TVMExpr:
     clear_map and expr_map.clear()
 
     def _make_expr(sym: Symbol, args, attrs) -> Expr:
@@ -211,7 +219,7 @@ def symbol2expr(
         if sym.name in expr_map:
             return
 
-        print("<=", sym)
+        #  print("<=", sym)
         args = [expr_map[i.name] for i in sym.args]
         attrs = {k: v for k, v in sym.attrs.items()}
 
@@ -228,7 +236,7 @@ def symbol2expr(
         else:
             out = _make_expr(sym, args, attrs)
 
-        print(f"=> {sym.name} = {out}")
+        #  print(f"=> {sym.name} = {out}")
         if sym.name == symbol.name:
             out: Expr = builder.emit_output(out, name_hint=sym.name)
         else:
@@ -237,13 +245,17 @@ def symbol2expr(
 
     inputs = []
     attrs = { 'num_input': 0 }
+    C = config.MRTConfig.G()
     def _input(sym: Symbol):
         if op.is_variable(sym):
             attrs["num_input"] += op.is_input(sym, params)
             st_info = R.Tensor(sym.shape, sym.dtype)
 
             # fix unverified memory error.
-            if sym.extra_attrs.get("use_const", False):
+            if op.is_param(sym, params) and \
+                    product(sym.shape) <= C.max_const_size:
+            #  if sym.extra_attrs.get("use_const", False) or \
+            #      (op.is_param(sym, params) and len(sym.shape) == 0):
                 data = params[sym.name]
                 out = relax.Constant(to_ndarray(data), st_info)
             else:
@@ -259,6 +271,6 @@ def symbol2expr(
 
     #  with open("/tmp/relax.log", "w") as f:
     #      f.write(builder.get().script())
-    return builder.get()
+    return builder.get()[func_name].body
 
     #  return expr_map[symbol.name]

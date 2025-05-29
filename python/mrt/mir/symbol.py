@@ -3,8 +3,10 @@ import typing
 
 import json
 from functools import wraps
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass, field
+from collections.abc import MutableMapping
 
+import mrt
 from mrt.common import config
 from mrt.common.utils import *
 from mrt.common.types import *
@@ -12,6 +14,7 @@ from mrt.common.types import *
 # from . import config
 # from .utils import *
 #  from .types import *
+from .opns import *
 
 __ALL__ = [
         "Symbol",
@@ -173,7 +176,14 @@ class _BaseSymbol:
         oattrs = {k: v for k, v in self.extra_attrs.items()}
         oattrs.update(attrs)
         #  oattrs.update(self.extra_attrs)
-        return "{:>20} = {:>15}{:40} /* attrs */ {} | {}".format(
+        #  with config.LogConfig(name_width=20):
+        #      return config.log_str(
+        #          f"{_uniform(self.name, 20)} =",
+        #          f"{self.op_name:>15}{args_info:40}",
+        #          f"*attrs*", _format_printer(self.attrs),
+        #          _format_printer(oattrs),
+        #              )
+        return "{:>20} = {:>15}{:40} | *attrs:* {} | {}".format(
                 _uniform(self.name, 20),
                 self.op_name, args_info,
                 _format_printer(self.attrs),
@@ -234,11 +244,19 @@ class Symbol(_BaseSymbol):
         """ Check current symbol is in the op name list. """
         assert len(op_names) > 0
         return self.op_name in op_names
+    def is_near(self, *names) -> bool:
+        """ Check is near passed names,
+                examine args, name, op_name, etc.
+        """
+        return (config.SYMBOL_ALL_NEAR in names) or \
+                (self.name in names) or \
+                (self.op_name in names) or \
+                all([a.name in names for a in self.args])
 
     @property
     def shape(self) -> ShapeT:
         shp = self.extra_attrs.get("shape", None)
-        return shp and list(shp)
+        return None if shp is None else list(shp)
     @shape.setter
     def shape(self, val):
         self.extra_attrs["shape"] = list(val)
@@ -261,12 +279,12 @@ class Symbol(_BaseSymbol):
     def hash(self) -> int:
         return hash(str(self))
 
-
 def _topo_sort(symbol: Symbol, sym_list: typing.List[Symbol]):
     assert isinstance(symbol, Symbol), \
             f"({type(symbol).__name__}){str(symbol)}"
 
-    if sym_list.count(symbol) > 0:
+    if symbol in sym_list:
+    #  if sym_list.count(symbol) > 0:
         return
     for c in symbol.args:
         _topo_sort(c, sym_list)
@@ -280,7 +298,6 @@ def sym2list(symbol: Symbol) -> typing.List[Symbol]:
 _SymbolNodesT = typing.List[typing.Dict[str, typing.Any]]
 _SymbolJsonT = typing.Dict[str, typing.Any]
 
-
 def dump_json(symbol: Symbol) -> _SymbolJsonT:
     nodes = []
     def _to_json(sym: Symbol):
@@ -290,7 +307,7 @@ def dump_json(symbol: Symbol) -> _SymbolJsonT:
             "_class_type": get_class_name(sym),
             })
         nodes.append(node)
-    with config.Pass():
+    with config.PassConfig():
         visit(symbol, _to_json)
     return { "nodes": nodes, }
 
@@ -315,11 +332,13 @@ _TransformerT = typing.Callable[[Symbol], typing.Optional[Symbol]]
 
 def visit(symbol: Symbol, callback: _VisitorT):
     """ Visitor mode, possible modify symbol itself. """
-    C = config.Pass.G()
+    C = config.LogConfig.G()
     for sym in sym2list(symbol):
-        C.log_before and print("[{} <<] {}".format(C.name, sym))
+        if callback.__name__ in C.log_vot_cbs:
+            config.log(callback.__name__, f"<< {sym}")
         callback(sym)
-        C.log_after and print("[{} >>] {}".format(C.name, sym))
+        if callback.__name__ in C.log_vot_cbs:
+            config.log(callback.__name__, f">> {out}")
 
 def transform(symbol: Symbol, callback: _TransformerT) -> Symbol:
     """ Transform symbol from old to new, with inputs updated.
@@ -328,32 +347,203 @@ def transform(symbol: Symbol, callback: _TransformerT) -> Symbol:
         attributes in parameter passed in args does nothing.
     """
     sym_map: typing.Dict = {}
-    C = config.Pass.G()
+    C = config.LogConfig.G()
     for sym in sym2list(symbol):
+        # pre-clone symbol with updated args,
+        # to avoid misleading usage in callback.
         args = [sym_map[c.name] for c in sym.args]
-        # pre-clone symbol, to avoid misleading usage in callback
         sym = sym.copy(args=args)
-        C.log_before and print("[{} <<] {}".format(C.name, sym))
 
-        new_conf = C if C.inherit else config.Pass()
-        with new_conf:
-            out = callback(sym) or sym
+        if callback.__name__ in C.log_vot_cbs:
+            config.log(callback.__name__, f"<< {sym}")
+
+        out = callback(sym) or sym
         assert isinstance(out, Symbol), out
         # default const_ prefix symbol means parameters
         assert sym.name not in sym_map, sym.name
         # assert sym.name.startswith("const_") or \
         #         sym.name not in sym_map, sym.name
         sym_map[sym.name] = out
-        C.log_after and print("[{} >>] {}".format(C.name, out))
+        if callback.__name__ in C.log_vot_cbs:
+            config.log(callback.__name__, f">> {out}")
+
+        #  C.log_before and print("[{} <<] {}".format(C.name, sym))
+        #  new_conf = C if C.inherit else config.PassConfig()
+        #  with new_conf:
+        #      out = callback(sym) or sym
+        #  assert isinstance(out, Symbol), out
+        #  # default const_ prefix symbol means parameters
+        #  assert sym.name not in sym_map, sym.name
+        #  # assert sym.name.startswith("const_") or \
+        #  #         sym.name not in sym_map, sym.name
+        #  sym_map[sym.name] = out
+        #  C.log_after and print("[{} >>] {}".format(C.name, out))
     return sym_map[symbol.name]
 
-def raw_log(symbol: Symbol):
+# =============== MultiHeadSymbol API ==================
+#  @dataclass(repr=False, init=False)
+#  class MultiHeadSymbol(MutableMapping, Symbol):
+#      """ multihead symbol store as dict,
+#          consistent with tvm.IRModule.
+
+#          use dict or {} to initialize instance.
+#      """
+#      arg_names: typing.List[str]
+#      _mhs: typing.Dict[str, Symbol] = field(repr=False)
+
+#      def __repr__(self, **attrs):
+#          attrs["arg_names"] = self.arg_names
+#          return super(Symbol, self).__repr__(**attrs)
+
+#      def __init__(self,
+#                   name: str = None, op_name: str = None,
+#                   args = [], arg_names = [],
+#                   attrs = {}, extra_attrs = {},
+#                   _mhs = {}, **kwargs):
+#          self.name = name or N.n("mhs_")
+#          assert op_name is None or op_name == TUPLE, \
+#              f"MHS op_name init must be TUPLE, but get:{op_name}"
+#          self.op_name = TUPLE
+
+#          if args or arg_names:
+#              assert not kwargs, f"kwargs is not empty."
+#              assert len(args) == len(arg_names)
+#              self.args = args
+#              self.arg_names = arg_names
+#              if not _mhs:
+#                  _mhs = dict(zip(arg_names, args))
+#              else:
+#                  assert all([(n in _mhs) for n in arg_names]), \
+#                      f"_mhs and arg_names:{arg_names} not consistent."
+#              self._mhs = _mhs
+#          else:
+#              assert not _mhs
+#              self._mhs = dict(kwargs)
+#              self.args = list(self._mhs.values())
+#              self.arg_names = list(self._mhs.keys())
+#          assert all([isinstance(a, Symbol) for a in self.args])
+
+#          self.attrs = attrs or {}
+#          self.extra_attrs = extra_attrs or {}
+
+#      def __getitem__(self, key: str) -> Symbol:
+#          return self.mhs[key]
+#      def __setitem__(self, key: str, val: Symbol):
+#          self._mhs[key] = val
+#          self.args = list(self._mhs.values())
+#          self.arg_names = list(self._mhs.keys())
+#      def __delitem__(self, key: str):
+#          del self._mhs[key]
+#          self.args = list(self._mhs.values())
+#          self.arg_names = list(self._mhs.keys())
+#      def __len__(self) -> int:
+#          return len(self.args)
+#      def __iter__(self):
+#          return iter(self._mhs)
+#      def items(self):
+#          return self._mhs.items()
+
+#      @classmethod
+#      def from_symbol(cls,
+#                      symbol: Symbol,
+#                      name: str = "main") -> MultiHeadSymbol:
+#          return MultiHeadSymbol(**{ name: symbol })
+
+class MultiHeadSymbol(dict):
+    origin: typing.Optional[Symbol] = None
+
+    @classmethod
+    def from_symbol(cls, symbol: Symbol, name: str = "main"):
+        return MultiHeadSymbol({ name: symbol })
+
+    def as_tuple(self) -> (typing.List[str], Symbol):
+        from . import op
+        #  args = list(self.values())
+        #  sym_type = type(args[0]) if args else Symbol
+        mhs = self.origin or op.Tuple(*list(self.values()))
+        return list(self.keys()), mhs
+
+    @classmethod
+    def from_tuple(cls, tuple_names, symbol):
+        assert symbol.is_op(TUPLE), symbol
+        mhs = cls(zip(tuple_names, symbol.args))
+        mhs.origin = symbol
+        return mhs
+
+#  MultiHeadSymbol = typing.Dict[str, Symbol]
+
+#  def mhs_sym2list(mhs: MultiHeadSymbol) -> typing.List[Symbol]:
+#      sym_list: typing.List[Symbol] = []
+#      for name, sym in mhs.items():
+#          _topo_sort(sym, sym_list)
+#      return sym_list
+
+#  def mhs_visit(mhs: MultiHeadSymbol, callback: _VisitorT):
+#      C = config.LogConfig.G()
+#      for sym in mhs_sym2list(mhs):
+#          C.log_in_vot(callback.__name__, f"<< {sym}")
+#          callback(sym)
+#          C.log_in_vot(callback.__name__, f">> {sym}")
+
+#  def mhs_transform(
+#          mhs: MultiHeadSymbol,
+#          callback: _TransformerT) -> MultiHeadSymbol:
+#      sym_map: typing.Dict[str, Symbol] = {}
+#      C = config.LogConfig.G()
+
+#      from . import op
+#      for sym in mhs_sym2list(mhs):
+#          # pre-clone symbol with updated args,
+#          # to avoid misleading usage in callback.
+#          args = [sym_map[c.name] for c in sym.args]
+#          sym = sym.copy(args=args)
+
+#          C.log_in_vot(callback.__name__, f"<< {sym}")
+#          out = callback(sym) or sym
+#          assert isinstance(out, Symbol), out
+#          # default const_ prefix symbol means parameters
+#          assert sym.name not in sym_map, sym.name
+#          # assert sym.name.startswith("const_") or \
+#          #         sym.name not in sym_map, sym.name
+#          sym_map[sym.name] = out
+#          new = op.subgraph(out, [a.name for a in sym.args])
+#          C.log_in_vot(callback.__name__, f">> {raw_log(new, False)}")
+#      return {k: sym_map[v.name] for k, v in mhs.items()}
+
+#  _MultiHeadSymbolJsonT = typing.Dict[str, _SymbolJsonT]
+#  def mhs_dump_json(mhs: MultiHeadSymbol) -> _MultiHeadSymbolJsonT:
+#      return {k: dump_json(v) for k, v in mhs.items()}
+#  def mhs_load_json(
+#          data: _MultiHeadSymbolJsonT,
+#          **extra_attrs) -> MultiHeadSymbol:
+#      return {k: load_json(v) for k, v in data}
+
+# ^^^^^^^^^^^^^^^ MultiHeadSymbol API ^^^^^^^^^^^^^^^^^^
+
+Graph = typing.Union[Symbol, MultiHeadSymbol]
+""" Notice that Symbol and MultiHeadSymbol can both
+        be regarded as a model Graph.
+"""
+#  def graph_visit(graph: Graph, callback: _VisitorT):
+#      return visit(graph, callback)
+#      #  visit_func = visit if isinstance(graph, Symbol) else mhs_visit
+#      #  return visit_func(graph, callback)
+#  def graph_transform(graph: Graph, callback: _TransformerT):
+#      return transform(graph, callback)
+#      #  trans_func = transform if isinstance(graph, Symbol) \
+#      #          else mhs_transform
+#      #  return trans_func(graph, callback)
+#  def get_graph_outputs(graph: Graph) -> typing.List[Symbol]:
+#      return [ graph, ] if isinstance(graph, Symbol) else \
+#              [v for v in graph.values()]
+
+def raw_log(symbol: Symbol, use_header = True) -> str:
     header = "{f} Raw Info {f}\n".format(f = "="*25)
-    msg = [ header, ]
+    msg = [ header, ] if use_header else []
     def _log(sym: Symbol):
         msg.append(str(sym))
     visit(symbol, _log)
-    msg.append("=" * len(header))
+    use_header and msg.append("=" * len(header))
     return "\n".join(msg)
 
 def raw_print(symbol: Symbol):
@@ -375,3 +565,6 @@ def filter_operators(*op_names: typing.List[str]):
                 return f(sym, *args, **kw)
         return _wrapper
     return _pass
+
+
+

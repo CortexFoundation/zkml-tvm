@@ -18,6 +18,10 @@ from mrt.common.types import *
 # DataLabelT = typing.Tuple[np.ndarray, typing.Any]
 # """ a (data, label) representation. """
 
+TVMModule = tvm.IRModule
+TVMFunction = relax.Function
+TVMExpr = relax.Expr
+
 DefConvertFunc = typing.Callable[[typing.Any], typing.Any]
 
 def to_numpy(data: OpOutputT) -> OpNumpyT:
@@ -70,7 +74,7 @@ def convert_to_py(value,
 
 def get_struct_info(info: relax.StructInfo, key):
     if isinstance(info, relax.struct_info.TupleStructInfo):
-        return [struct_info(f, key) for f in info.fields]
+        return [get_struct_info(f, key) for f in info.fields]
     #  return getattr(info, key)
     val = convert_to_py(getattr(info, key))
     return val

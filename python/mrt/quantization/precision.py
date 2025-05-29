@@ -6,12 +6,15 @@ from dataclasses import dataclass
 import math
 import numpy as np
 
-from . import op
-from .opns import *
-from .utils import number_to_bits, count_to_bits, bits_to_number
-from .types import ParametersT
-from .symbol import Symbol, visit, transform
-from .transform import Transformer, RunOnce
+from mrt.mir import op
+from mrt.mir.opns import *
+from mrt.mir.symbol import Symbol, visit, transform
+
+from mrt.common.utils import \
+        number_to_bits, count_to_bits, bits_to_number
+from mrt.common.types import ParametersT
+
+from .transform import Transformer
 
 __ALL__ = [ "WithPrecision",
         "InferPrecision", "QuantizedInfo",
@@ -118,8 +121,8 @@ def _infer_nn(s: WithPrecision):
     add_count = np.prod(W.shape[1:])
     add_bits = count_to_bits(add_count)
     return _infer_mul(s) + add_bits
+# @prec_rules(BIAS_ADD)
 @prec_rules(ADD, SUB)
-@prec_rules(BIAS_ADD)
 def _infer_add(s: WithPrecision):
     """ op for ADD, SUB should consider scale the same, and then
             to be operated. Here we consider the max precision
@@ -138,7 +141,7 @@ prec_rules(CONCAT)(_infer_max)
 @prec_rules(SPLIT, TUPLE_GET_ITEM)
 @prec_rules(SQUEEZE, RESHAPE)
 @prec_rules(RELU, MAX_POOL2D)
-@prec_rules(CAST)
+@prec_rules(AS_TYPE)
 def _first_like(s: WithPrecision):
     return _infer_index(s, 0)
 @prec_rules(SUM)
@@ -149,7 +152,7 @@ def _infer_sum(s: WithPrecision):
     count = int(input_len / output_len)
     sum_bit = count_to_bits(count)
     return _infer_max(s) + sum_bit
-prec_rules(MUL)(_infer_mul)
+prec_rules(MUL, MATMUL)(_infer_mul)
 @prec_rules(CLIP)
 def _infer_clip(s: WithPrecision):
     a_min = s.extra_attrs["a_min"] if "a_min" in s.extra_attrs else s.attrs["a_min"]

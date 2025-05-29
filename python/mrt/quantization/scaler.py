@@ -3,9 +3,9 @@ from __future__ import annotations
 import typing
 from dataclasses import dataclass, field
 
-from .opns import *
-from .symbol import *
-from . import op, utils
+from mrt.mir import op
+from mrt.mir.opns import *
+from mrt.mir.symbol import *
 
 @dataclass(repr=False)
 class WithScale(Symbol):

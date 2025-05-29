@@ -92,7 +92,7 @@ InferPrecision.test(TUPLE)(InferPrecision._infer_max)
 def _infer_tuple_get_item(self: InferPrecision):
     return self._infer_index(self.parsed.index)
 InferPrecision.test(CONV2D, DENSE)(InferPrecision._infer_nn)
-InferPrecision.test(BIAS_ADD)(InferPrecision._infer_add)
+# InferPrecision.test(BIAS_ADD)(InferPrecision._infer_add)
 InferPrecision.test(RELU, MAX_POOL2D)(InferPrecision._first_like)
 InferPrecision.test(SQUEEZE, RESHAPE)(InferPrecision._first_like)
 InferPrecision.test(ADD, SUB)(InferPrecision._infer_add)

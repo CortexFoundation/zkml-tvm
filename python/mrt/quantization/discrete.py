@@ -4,14 +4,18 @@ import typing
 import math
 from dataclasses import dataclass, field
 
-from .opns import *
-from . import op, inference
-from .symbol import *
-from .utils import *
-from .calibrate import Sampling
-from .precision import WithPrecision
+from mrt.mir import op
+from mrt.mir.opns import *
+from mrt.mir.symbol import *
+
+from mrt.runtime import inference
+
+from mrt.common.utils import *
+
 from .scaler import *
+from .calibrate import Sampling
 from .transform import Transformer
+from .precision import WithPrecision
 
 __ALL__ = [
         "Discretor",
@@ -71,7 +75,8 @@ class QuantInfo(WithScale, WithPrecision, Sampling):
                     self,
                     rescale=scale/curr_scale,
                     precision=precision,
-                    ).like(self)
+                    )
+            out = out.like(self)
             out.set_extra_attrs(
                 data=self.data, scale=scale, precision=precision)
             self.requant_ops[info] = out
@@ -121,11 +126,11 @@ def args_max_prec(prec: int):
 
 register_rules_with_default(
         CONV2D,
-        requant_rule=args_max_prec(9),
+        requant_rule=args_max_prec(8),
         scale_rule=scale_nn)
 
 register_rules_with_default(
-        DENSE, MUL,
+        DENSE, MUL, MATMUL,
         requant_rule=args_max_prec(8),
         scale_rule=scale_nn)
 
@@ -171,7 +176,9 @@ def scale_like_index(s: WithScale, index: int = 0):
     return s.args[index].scale
 
 register_rules_with_default(
-        ADD, SUB, BIAS_ADD, MAXIMUM, MINIMUM,
+        ADD, SUB,
+        # BIAS_ADD,
+        MAXIMUM, MINIMUM,
         requant_rule=lambda s: uniform_args_scale(s.args),
         scale_rule=scale_like_index)
 

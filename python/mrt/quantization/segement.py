@@ -2,10 +2,11 @@ import typing
 
 from dataclasses import dataclass, field
 
-from .symbol import *
+from mrt.mir.symbol import *
+from mrt.mir import op, opns, helper
+
 from .scaler import WithScale
 from .transform import RunOnce
-from . import op, opns, helper
 
 _SCALE_CONSTANT_OPS = [
     opns.VAR,
@@ -19,7 +20,7 @@ _SCALE_CONSTANT_OPS = [
     opns.TUPLE, opns.TUPLE_GET_ITEM,
     opns.GET_VALID_COUNT,
     opns.NON_MAX_SUPRESSION,
-    opns.CLIP, opns.CAST,
+    opns.CLIP, opns.AS_TYPE,
         ]
 
 @dataclass(repr=False)

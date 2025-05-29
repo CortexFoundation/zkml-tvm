@@ -11,7 +11,7 @@ from mrt.common.utils import N
 from .opns import *
 from .symbol import *
 
-def subgraph(symbol: Symbol, inames=[], onames=[]):
+def subgraph(symbol: Symbol, inames=[], onames=[]) -> Symbol:
     out = []
     def _find(sym: Symbol):
         if sym.name in inames:
@@ -60,7 +60,7 @@ TupleGetItem = _register_op(TUPLE_GET_ITEM)
 nn_conv2d = _register_op(CONV2D)
 nn_dense = _register_op(DENSE)
 nn_batch_norm = _register_op(BATCH_NORM)
-bias_add = _register_op(BIAS_ADD)
+#  bias_add = _register_op(BIAS_ADD)
 
 nn_relu = _register_op(RELU)
 
@@ -69,8 +69,9 @@ sum = _register_op(SUM)
 clip = _register_op(CLIP)
 ceil = _register_op(CEIL)
 right_shift = _register_op(RIGHT_SHIFT)
-# astype = _register_op(AS_TYPE)
-cast = _register_op(CAST)
+# relax api from cast to astype
+#  astype = _register_op(AS_TYPE)
+cast = _register_op(AS_TYPE)
 #  flatten = _register_op(FLATTEN)
 adv_index = _register_op(ADV_INDEX)
 zeros_like = _register_op(ZEROS_LIKE)
